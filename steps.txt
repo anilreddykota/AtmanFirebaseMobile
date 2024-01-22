@@ -1,0 +1,38 @@
+firebase-admin, express pkg install chesanu
+next firebase loki veli API keys thachukuntuna
+firebase ki node ki connection evali ante manaki API's kavali avi thachukuntuna 
+dhaniki firebase lo account  create cheyali chesthuna
+Enable Google Analytics for this project
+Recommended edhi disabale chestham or metrics vasthu untayi mail ki 
+""""""serviceAccountKey.json"""""  edhi firebase li untundi thechulovali 
+
+serviceAccountKey dhi ela thachukovali anadhi chesthunanu ippudu and code manaki two files unayi authenticateUser.js and server.js files 
+
+authenticateUser.js edhi token create cheyataniki login ayina apudu manaki oka token create chesi local storage lo save chestham adhi unte user login ayi unadu lekapothe logout ayi unadu ani meaning. 
+server.js ee file lo nemo routes untayi login vi and connection vi 
+
+before that service manam firestore ni enable cheyali and manaki firestore and real time database ani two untayi aa chatgpt dho choosava??
+
+allow read, write: if false; true cheyali 
+
+download chesina serviceAccountKey file ni mana folder lo srevice.js file ki sibling ga store chestham 
+
+so ela connection ayite echam edhi login dhi check chesa route flutter unte andulo integrate cheyali ee route ni front end lo evali 
+
+but okasari run chesthanu so ikkada dhaka error ledhu all good 
+
+indulo laga client side evali anta flutter lo yelo rasaro choodam okasari
+
+
+manaki front end ledhu kabati check chesukuntuna test route tho
+
+ekada manaki data anadhi firebase lo firestore lo untadhi akada multiple collections untayi
+collection ante oka table anuko mysql laga 
+
+
+firebase lo authentication enable cheyali. left side build lo 
+and refresh cheyi firebase and code both
+
+done successful ga firebase nunchi connection echam and database lo data store chesam email format lo 
+
+your-secret-key edhi epudu koda unique ga fuzzy ga undali like alogorithms use chesi encrypt chesindi use chesatharu like whats app lo starting lo end to end encrypted antadu ga alaga okay na??
