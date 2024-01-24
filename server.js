@@ -141,6 +141,39 @@ app.post('/registernickname', async (req, res) => {
 
 
 //login route
+// app.post('/login', async (req, res) => {
+//     try {
+//         const { email, password } = req.body;
+
+//         // Retrieve user by email using the admin SDK
+//         const userRecord = await admin.auth().getUserByEmail(email);
+
+//         // Verify the password (this is a simple example, in a real-world scenario, you should use a more secure method)
+//         if (userRecord && userRecord.email === email) {
+//             // Generate JWT token
+//             const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'kuw', {
+//                 expiresIn: '1h', // Token expiration time
+//             });
+
+//             // Include the token in the response header
+//             res.header('Authorization', `Bearer ${token}`);
+//             res.json({ message: 'Login successful', userData: { email: userRecord.email } });
+//         } else {
+//             res.status(401).json({ error: 'Invalid email or password' });
+//         }
+//     } catch (error) {
+//         console.error('Error during login:', error);
+
+//         // Handle specific authentication errors
+//         if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+//             res.status(401).json({ error: 'Invalid email or password' });
+//         } else {
+//             res.status(500).json({ error: 'Internal Server Error' });
+//         }
+//     }
+// });
+app.use(cookieParser());
+
 app.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -150,14 +183,31 @@ app.post('/login', async (req, res) => {
 
         // Verify the password (this is a simple example, in a real-world scenario, you should use a more secure method)
         if (userRecord && userRecord.email === email) {
-            // Generate JWT token
-            const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'kuw', {
-                expiresIn: '1h', // Token expiration time
+            // Generate JWT access token with a short expiration time
+            const accessToken = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'yourSecretKey', {
+                expiresIn: '15m', // 15 minutes
             });
 
-            // Include the token in the response header
-            res.header('Authorization', `Bearer ${token}`);
-            res.json({ message: 'Login successful', userData: { email: userRecord.email } });
+            // Generate JWT refresh token with a longer expiration time
+            const refreshToken = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'yourRefreshKey', {
+                expiresIn: '7d', // 7 days
+            });
+
+            // Set the access and refresh tokens as HTTP cookies
+            res.cookie('accessToken', accessToken, {
+                httpOnly: true,
+                maxAge: 15 * 60 * 1000, // 15 minutes in milliseconds
+            });
+
+            res.cookie('refreshToken', refreshToken, {
+                httpOnly: true,
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+            });
+
+            res.json({
+                message: 'Login successful',
+                userData: { email: userRecord.email },
+            });
         } else {
             res.status(401).json({ error: 'Invalid email or password' });
         }
