@@ -18,7 +18,7 @@ admin.initializeApp({
 // Middleware for parsing JSON
 app.use(express.json());
 
-async function isNicknameTaken(nickname) {
+async function isNicknameTaken(nickname){
     const snapshot = await admin.firestore().collection('users').where('nickname', '==', nickname).get();
     return !snapshot.empty;
 }
@@ -255,8 +255,8 @@ app.post('/forgot-password', async (req, res) => {
             // Configure your email service here
             service: 'gmail',
             auth: {
-                user:'annapurna2005k@gmail.com' ,            
-                pass: 'dqtapkxvuvhlicyf',
+                user:'psycove.innerself@gmail.com' ,            
+                pass: 'iapaxkleneqcooid',
             },
             tls: {
               rejectUnauthorized: false, // Accept self-signed certificates
@@ -264,7 +264,7 @@ app.post('/forgot-password', async (req, res) => {
         });
         console.log(otp)
         const mailOptions = {
-            from: 'annapurna2005k@gmail.com',
+            from: 'psycove.innerself@gmail.com',
             to: email,
             subject: 'Password Reset OTP',
             text: `Your OTP for password reset is: ${otp}`,
