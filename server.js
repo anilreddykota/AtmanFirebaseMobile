@@ -46,14 +46,13 @@ app.post('/register', async (req, res) => {
       email,
       password:hashedPassword
     };
-
     await admin.firestore().collection('users').doc(userUid).set(userData);
 
     // Respond with a success message and user UID
     res.json({ message: 'Registration successful', uid: userUid });
   } catch (error) {
     console.error('Error in registration:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -68,10 +67,10 @@ app.post('/userdetails', async (req, res) => {
       { merge: true } // This option ensures that existing data is not overwritten
     );
 
-    res.json({ message: 'User details saved successfully', uid: userUid  });
+    res.json({ message: 'User details saved successfully', uid:uid });
   } catch (error) {
     console.error('Error in user details registration step:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -85,10 +84,10 @@ app.post('/registerphonenumber', async (req, res) => {
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'phone number saved successfully', uid: userUid });
+    res.json({ message: 'phone number saved successfully', uid: uid });
   } catch (error) {
     console.error('Error in phone number registration step:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 // Second Registration Step
@@ -99,7 +98,7 @@ app.post('/registernickname', async (req, res) => {
     // Check if the nickname is already taken
     const nicknameExists = await isNicknameTaken(nickname);
     if (nicknameExists) {
-      return res.status(400).json({ error: 'Nickname is already taken' });
+      return res.status(400).json({ message: 'Nickname is already taken' });
     }
     // Update user data in Firestore (add or update the nickname)
     await admin.firestore().collection('users').doc(uid).set(
@@ -108,10 +107,10 @@ app.post('/registernickname', async (req, res) => {
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'User nickname added registered successfully', uid: userUid });
+    res.json({ message: 'User nickname added registered successfully', uid: uid });
   } catch (error) {
     console.error('Error in nickname registration step:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -124,11 +123,17 @@ app.post('/login', async (req, res) => {
 
     // Retrieve user by email using the admin SDK
     const userRecord = await admin.auth().getUserByEmail(email);
-
+    if (userRecord) {
     // Retrieve user data from Firestore, assuming you have a 'users' collection
     const userDoc = await admin.firestore().collection('users').doc(userRecord.uid).get();
 
     if (userDoc.exists) {
+      // Check if the user has a nickname
+      const userNickname = userDoc.data().nickname;
+      if (!userNickname) {
+        return res.status(401).json({ message: 'In complete Registration' });
+      }
+
       // Retrieve hashed password from Firestore
       const storedHashedPassword = userDoc.data().password;
 
@@ -145,23 +150,26 @@ app.post('/login', async (req, res) => {
         res.header('Authorization', `Bearer ${token}`);
         res.json({
           message: 'Login successful',
-          userData: { email: userRecord.email, uid: userRecord.uid },
+          userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname },
           tokenExpiresIn: 3600, // Expiration time in seconds (1 hour)
         });
       } else {
-        res.status(401).json({ error: 'Invalid email or password' });
+        res.status(401).json({ message: 'Invalid email or password' });
       }
     } else {
-      res.status(404).json({ error: 'User not found in Firestore' });
+      res.status(404).json({ message: 'User not found in Firestore' });
     }
+  } else {
+    res.status(404).json({ message: 'User not found' });
+  }
   } catch (error) {
     console.error('Error during login:', error);
 
     // Handle specific authentication errors
     if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-      res.status(401).json({ error: 'Invalid email or password' });
+      res.status(401).json({ message: 'Invalid email or password' });
     } else {
-      res.status(500).json({ error: 'Internal Server Error' });
+      res.status(500).json({ message: 'Internal Server Error' });
     }
   }
 });
@@ -175,7 +183,7 @@ app.post('/logout', (req, res) => {
 
     // Check if the token is in the blacklist
     if (token && tokenBlacklist.includes(token)) {
-      res.status(401).json({ error: 'Token has already been revoked' });
+      res.status(401).json({ message: 'Token has already been revoked' });
     } else {
       // Add the token to the blacklist (for demonstration purposes)
       tokenBlacklist.push(token);
@@ -184,7 +192,7 @@ app.post('/logout', (req, res) => {
     }
   } catch (error) {
     console.error('Error during logout:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -215,7 +223,7 @@ app.post('/forgot-password', async (req, res) => {
       service: 'gmail',
       auth: {
         user: 'psycove.innerself@gmail.com',
-        pass: 'iapaxkleneqcooid',
+        pass: 'kjrqzsjvbapkoqbw',
       },
       tls: {
         rejectUnauthorized: false, // Accept self-signed certificates call gmeet /
@@ -234,7 +242,7 @@ app.post('/forgot-password', async (req, res) => {
     res.json({ message: 'OTP sent successfully' });
   } catch (error) {
     console.error('Error in forgot password route:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -254,15 +262,15 @@ app.post('/verify-otp', async (req, res) => {
         res.json({ message: 'OTP verification successful' });
       } else {
         // Incorrect OTP
-        res.status(400).json({ error: 'Incorrect OTP' });
+        res.status(400).json({ message: 'Incorrect OTP' });
       }
     } else {
       // OTP not found in Firestore
-      res.status(404).json({ error: 'OTP not found' });
+      res.status(404).json({ message: 'OTP not found' });
     }
   } catch (error) {
     console.error('Error in verify OTP route:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
