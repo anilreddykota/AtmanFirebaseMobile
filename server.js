@@ -5,8 +5,9 @@ const admin = require('firebase-admin');
 const jwt = require('jsonwebtoken');
 const bcrypt=require("bcrypt")
 const nodemailer = require('nodemailer');
+const { v4: uuidv4 } = require('uuid');
 const port = process.env.PORT || 3000;
-const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
+//const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
 
@@ -19,6 +20,25 @@ admin.initializeApp({
 
 // Middleware for parsing JSON
 app.use(express.json());
+
+//authenticateuser
+async function authenticateUser(req, res, next) {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ message: 'Unauthorized - Missing token' });
+
+  try {
+    // Verify the JWT token against Firebase Authentication
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Add the user UID to the request object for further processing
+    req.userUid = decodedToken.uid;
+
+    next();
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    res.status(401).json({ message: 'Unauthorized - Invalid token' });
+  }
+}
 
 async function isNicknameTaken(nickname) {
   const snapshot = await admin.firestore().collection('users').where('nickname', '==', nickname).get();
@@ -90,8 +110,7 @@ app.post('/registerphonenumber', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-// Second Registration Step
-// Second Registration Step
+
 app.post('/registernickname', async (req, res) => {
   try {
     const { uid, nickname } = req.body;
@@ -114,54 +133,58 @@ app.post('/registernickname', async (req, res) => {
   }
 });
 
+
 // login route
-
-
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
     // Retrieve user by email using the admin SDK
     const userRecord = await admin.auth().getUserByEmail(email);
+
     if (userRecord) {
-    // Retrieve user data from Firestore, assuming you have a 'users' collection
-    const userDoc = await admin.firestore().collection('users').doc(userRecord.uid).get();
+      // Retrieve user data from Firestore, assuming you have a 'users' collection
+      const userDocRef = admin.firestore().collection('users').doc(userRecord.uid);
+      const userDoc = await userDocRef.get();
 
-    if (userDoc.exists) {
-      // Check if the user has a nickname
-      const userNickname = userDoc.data().nickname;
-      if (!userNickname) {
-        return res.status(401).json({ message: 'In complete Registration' });
-      }
+      if (userDoc.exists) {
+        // Check if the user has a nickname
+        const userNickname = userDoc.data().nickname;
 
-      // Retrieve hashed password from Firestore
-      const storedHashedPassword = userDoc.data().password;
+        if (!userNickname) {
+          // Remove user details if registration is incomplete
+          await userDocRef.delete();
+          return res.status(401).json({ message: 'Incomplete Registration - User details removed' });
+        }
 
-      // Verify the entered password with the stored hashed password
-      const isPasswordValid = await bcrypt.compare(password, storedHashedPassword);
+        // Retrieve hashed password from Firestore
+        const storedHashedPassword = userDoc.data().password;
 
-      if (isPasswordValid) {
-        // Generate JWT token with user UID and email
-        const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'atmanapplication', {
-          expiresIn: '1h', // Token expiration time (e.g., 1 hour)
-        });
+        // Verify the entered password with the stored hashed password
+        const isPasswordValid = await bcrypt.compare(password, storedHashedPassword);
 
-        // Include the token in the response header and respond with user data
-        res.header('Authorization', `Bearer ${token}`);
-        res.json({
-          message: 'Login successful',
-          userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname },
-          tokenExpiresIn: 3600, // Expiration time in seconds (1 hour)
-        });
+        if (isPasswordValid) {
+          // Generate JWT token with user UID and email
+          const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'atmanapplication', {
+            expiresIn: '1h', // Token expiration time (e.g., 1 hour)
+          });
+
+          // Include the token in the response header and respond with user data
+          res.header('Authorization', `Bearer ${token}`);
+          res.json({
+            message: 'Login successful',
+            userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname },
+            tokenExpiresIn: 3600, // Expiration time in seconds (1 hour)
+          });
+        } else {
+          res.status(401).json({ message: 'Invalid email or password' });
+        }
       } else {
-        res.status(401).json({ message: 'Invalid email or password' });
+        res.status(404).json({ message: 'User not found in Firestore' });
       }
     } else {
-      res.status(404).json({ message: 'User not found in Firestore' });
+      res.status(404).json({ message: 'User not found' });
     }
-  } else {
-    res.status(404).json({ message: 'User not found' });
-  }
   } catch (error) {
     console.error('Error during login:', error);
 
@@ -195,9 +218,6 @@ app.post('/logout', (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-
-
 
 // Generate an OTP and send it to the user's email
 app.post('/forgot-password', async (req, res) => {
@@ -251,17 +271,22 @@ app.post('/verify-otp', async (req, res) => {
     const { uid, enteredOtp } = req.body;
 
     // Retrieve stored OTP from Firestore
-    const otpDoc = await admin.firestore().collection('otp').doc(uid).get();
+    const otpDocRef = admin.firestore().collection('otp').doc(uid);
+    const otpDoc = await otpDocRef.get();
 
     if (otpDoc.exists) {
       const storedOtp = otpDoc.data().otp;
 
       // Compare entered OTP with stored OTP
       if (enteredOtp === storedOtp) {
-        // OTP is correct, you can proceed with further actions (e.g., password reset)
-        res.json({ message: 'OTP verification successful' });
+        // OTP verification successful
+        // Delete the OTP from Firestore
+        await otpDocRef.delete();
+        res.status(200).json({ message: 'OTP verification successful' });
       } else {
         // Incorrect OTP
+        // Also, delete the incorrect OTP from Firestore for security
+        await otpDocRef.delete();
         res.status(400).json({ message: 'Incorrect OTP' });
       }
     } else {
@@ -273,8 +298,274 @@ app.post('/verify-otp', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+// Middleware to get the current question count
+async function getCurrentQuestionCount() {
+  const snapshot = await admin.firestore().collection('questions').get();
+  return snapshot.size + 1; // Incrementing the count for the next question
+}
 
-// ... (Other routes and server setup)
+// New route to store questions with an index
+app.post('/store-question', async (req, res) => {
+  try {
+    const { question } = req.body;
+    // Get the current question count
+    const index = await getCurrentQuestionCount();
+    // Generate a unique identifier for the question
+    const questionId = uuidv4();
+    // Store the question in Firestore in a new collection named 'questions'
+    await admin.firestore().collection('questions').doc(questionId).set({
+      index,
+      question,
+    });
+    res.json({ message: 'Question stored successfully', questionId, index });
+  } catch (error) {
+    console.error('Error in ask-question route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+let lastFetchedQuestionIndex = 0; // Initialize with 0
+
+// Endpoint to get the next question in sequence
+app.get('/get-next-question', async (req, res) => {
+  try {
+    let query = admin.firestore().collection('questions').limit(1);
+
+    // If lastFetchedQuestionIndex is available, query the next question after it
+    if (lastFetchedQuestionIndex !== null) {
+      query = query.where('index', '>', lastFetchedQuestionIndex).limit(1);
+    }
+
+    const nextQuestionSnapshot = await query.get();
+
+    if (nextQuestionSnapshot.empty) {
+      // If no more questions are found, reset to index 1 and query again
+      lastFetchedQuestionIndex = 0;
+      query = admin.firestore().collection('questions').where('index', '>', lastFetchedQuestionIndex).limit(1);
+      const repeatedQuestionSnapshot = await query.get();
+
+      if (repeatedQuestionSnapshot.empty) {
+        res.status(404).json({ message: 'No questions found' });
+      } else {
+        const repeatedQuestion = repeatedQuestionSnapshot.docs[0].data();
+        lastFetchedQuestionIndex = repeatedQuestion.index; // Update the last fetched question index
+        res.json({ question: repeatedQuestion });
+      }
+    } else {
+      const nextQuestion = nextQuestionSnapshot.docs[0].data();
+      lastFetchedQuestionIndex = nextQuestion.index; // Update the last fetched question index
+      res.json({ question: nextQuestion });
+    }
+  } catch (error) {
+    console.error('Error in get-next-question route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+app.post('/create-post', async (req, res) => {
+  try {
+    const { uid, title, description, imageBase64 } = req.body;
+
+    // Decode the base64-encoded image
+    const imageBuffer = Buffer.from(imageBase64, 'base64');
+
+    // Generate a unique filename for the image using uuid
+    const imageFilename = `${uuidv4()}.jpg`;
+
+    // Upload the image to Firebase Storage
+    const storageRef = admin.storage().bucket().file(imageFilename);
+    await storageRef.save(imageBuffer, { contentType: 'image/jpeg' });
+
+    // Get the URL of the uploaded image
+    const imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
+
+    // Get the current date
+    const currentDate = new Date();
+
+    // Store the user's post in a collection (e.g., 'posts') with the image URL
+    const postRef = await admin.firestore().collection('posts').add({
+      uid,
+      title,
+      description,
+      imageUrl, // Store the image URL in Firestore
+      date: currentDate,
+    });
+
+    res.json({ message: 'Post created successfully', postId: postRef.id });
+  } catch (error) {
+    console.error('Error in create-post route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// Function to check if a goal exists for the current date
+const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
+  const snapshot = await admin.firestore().collection('users').doc(uid).collection(subcollection)
+    .where('date', '==', currentDate)
+    .get();
+
+  return !snapshot.empty;
+};
+
+// API to create daily goal for a user
+// Function to get the document reference for a goal on a specific date
+const getGoalDocumentRefForDate = async (uid, subcollection, currentDate) => {
+  const snapshot = await admin.firestore().collection('users').doc(uid).collection(subcollection)
+    .where('date', '==', currentDate)
+    .get();
+
+  if (!snapshot.empty) {
+    // If a document exists for the current date, return its reference
+    return snapshot.docs[0].ref;
+  }
+
+  return null;
+};
+// API to create daily goal for a user
+// Function to format the date as a string for use in the document ID
+const formatDateForDocumentId = (date) => {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// API to create daily goal for a user
+app.post('/create-daily-goal', async (req, res) => {
+  try {
+    const { uid, goal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on user's UID and the formatted date
+    const dailyGoalRef = admin.firestore().collection('users').doc(uid).collection('daily_goal').doc(formattedDate);
+
+    // Update the goal or create a new document if it doesn't exist
+    await dailyGoalRef.set({
+      goal,
+      date: currentDate,
+    }, { merge: true }); // Use merge option to update existing fields without overwriting
+
+    res.json({ message: 'Daily goal updated successfully', goalId: dailyGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-daily-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+// API to create career goal for a user
+app.post('/create-career-goal', async (req, res) => {
+  try {
+    const { uid, goal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on user's UID and the formatted date
+    const careerGoalRef = admin.firestore().collection('users').doc(uid).collection('career_goal').doc(formattedDate);
+
+    // Update the goal or create a new document if it doesn't exist
+    await careerGoalRef.set({
+      goal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Career goal updated successfully', goalId: careerGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-career-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// API to create learning goal for a user
+app.post('/create-learning-goal', async (req, res) => {
+  try {
+    const { uid, goal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on user's UID and the formatted date
+    const learningGoalRef = admin.firestore().collection('users').doc(uid).collection('learning_goal').doc(formattedDate);
+
+    // Update the goal or create a new document if it doesn't exist
+    await learningGoalRef.set({
+      goal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Learning goal updated successfully', goalId: learningGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-learning-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// API to create personal goal for a user
+app.post('/create-personal-goal', async (req, res) => {
+  try {
+    const { uid, goal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on user's UID and the formatted date
+    const personalGoalRef = admin.firestore().collection('users').doc(uid).collection('personal_goal').doc(formattedDate);
+
+    // Update the goal or create a new document if it doesn't exist
+    await personalGoalRef.set({
+      goal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Personal goal updated successfully', goalId: personalGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-personal-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+// API to create family goal for a user
+app.post('/create-family-goal', async (req, res) => {
+  try {
+    const { uid, goal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on user's UID and the formatted date
+    const familyGoalRef = admin.firestore().collection('users').doc(uid).collection('family_goal').doc(formattedDate);
+
+    // Update the goal or create a new document if it doesn't exist
+    await familyGoalRef.set({
+      goal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Family goal updated successfully', goalId: familyGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-family-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+app.post('/questions', async (req, res) => {
+  try {
+    const { text, options, scores } = req.body;
+
+    // Use admin.firestore() instead of undefined db
+    const questionRef = await admin.firestore().collection('selftestquestions').add({
+      text,
+      options,
+      scores,
+    });
+
+    res.json({ message: 'Question added successfully', questionId: questionRef.id });
+  } catch (error) {
+    console.error('Error adding question:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 
 // Start the Express server
 app.listen(port, () => {
