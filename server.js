@@ -174,7 +174,7 @@ app.post('/login', async (req, res) => {
           res.json({
             message: 'Login successful',
             userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname },
-            tokenExpiresIn: 3600, // Expiration time in seconds (1 hour)
+            tokenExpiresIn: 3600000, // Expiration time in seconds (1 hour)
           });
         } else {
           res.status(401).json({ message: 'Invalid email or password' });
@@ -226,7 +226,7 @@ app.post('/forgot-password', async (req, res) => {
 
     // Retrieve user by email using the admin SDK
     const userRecord = await admin.auth().getUserByEmail(email);
-    const otpLength = 6;
+    const otpLength = 4;
     let otp = '';
 
     for (let i = 0; i < otpLength; i++) {
@@ -548,15 +548,16 @@ app.post('/create-family-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+// API to create a new question with set information
 app.post('/questions', async (req, res) => {
   try {
-    const { text, options, scores } = req.body;
+    const { text, options, scores, set } = req.body;
 
-    // Use admin.firestore() instead of undefined db
-    const questionRef = await admin.firestore().collection('selftestquestions').add({
+    const questionRef = await admin.firestore().collection('questions').add({
       text,
       options,
       scores,
+      set, // Add set information
     });
 
     res.json({ message: 'Question added successfully', questionId: questionRef.id });
@@ -565,6 +566,7 @@ app.post('/questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
 
 
 // Start the Express server
