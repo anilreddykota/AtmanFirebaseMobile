@@ -166,7 +166,7 @@ app.post('/login', async (req, res) => {
         if (isPasswordValid) {
           // Generate JWT token with user UID and email
           const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'atmanapplication', {
-            expiresIn: '1h', // Token expiration time (e.g., 1 hour)
+
           });
 
           // Include the token in the response header and respond with user data
@@ -174,7 +174,6 @@ app.post('/login', async (req, res) => {
           res.json({
             message: 'Login successful',
             userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname },
-            tokenExpiresIn: 3600000, // Expiration time in seconds (1 hour)
           });
         } else {
           res.status(401).json({ message: 'Invalid email or password' });
@@ -303,63 +302,108 @@ async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
   return snapshot.size + 1; // Incrementing the count for the next question
 }
-
-// New route to store questions with an index
 app.post('/store-question', async (req, res) => {
   try {
     const { question } = req.body;
-    // Get the current question count
-    const index = await getCurrentQuestionCount();
-    // Generate a unique identifier for the question
-    const questionId = uuidv4();
-    // Store the question in Firestore in a new collection named 'questions'
-    await admin.firestore().collection('questions').doc(questionId).set({
-      index,
-      question,
-    });
-    res.json({ message: 'Question stored successfully', questionId, index });
+
+    // Get the reference to the document
+    const questionsDocRef = admin.firestore().collection('questionCollection').doc('dailyjournalquestions');
+
+    // Get the current questions data
+    const questionsDoc = await questionsDocRef.get();
+    let questionsData = questionsDoc.exists ? questionsDoc.data() : { questions: [] };
+
+    // Add the new question to the array with an index
+    const newQuestion = { index: questionsData.questions.length + 1, question };
+    questionsData.questions.push(newQuestion);
+
+    // Update the document in Firestore
+    await questionsDocRef.set(questionsData);
+
+    res.json({ message: 'Question stored successfully', newQuestion });
   } catch (error) {
-    console.error('Error in ask-question route:', error);
+    console.error('Error in store-question route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-let lastFetchedQuestionIndex = 0; // Initialize with 0
-
-// Endpoint to get the next question in sequence
 app.get('/get-next-question', async (req, res) => {
   try {
-    let query = admin.firestore().collection('questions').limit(1);
+    // Get the reference to the document containing the last fetched question index
+    const indexDocRef = admin.firestore().collection('questionCollection').doc('lastFetchedQuestionIndex');
+    
+    // Get the current index data
+    const indexDoc = await indexDocRef.get();
+    let lastFetchedQuestionIndex = indexDoc.exists ? indexDoc.data().index : 0;
+
+    // Query the next question
+    let query = admin.firestore().collection('questionCollection').doc('dailyjournalquestions');
 
     // If lastFetchedQuestionIndex is available, query the next question after it
-    if (lastFetchedQuestionIndex !== null) {
-      query = query.where('index', '>', lastFetchedQuestionIndex).limit(1);
-    }
+    query = query.get();
+    const questionsDoc = await query;
 
-    const nextQuestionSnapshot = await query.get();
+    if (questionsDoc.exists) {
+      const questionsData = questionsDoc.data();
+      const questions = questionsData.questions;
 
-    if (nextQuestionSnapshot.empty) {
-      // If no more questions are found, reset to index 1 and query again
-      lastFetchedQuestionIndex = 0;
-      query = admin.firestore().collection('questions').where('index', '>', lastFetchedQuestionIndex).limit(1);
-      const repeatedQuestionSnapshot = await query.get();
-
-      if (repeatedQuestionSnapshot.empty) {
-        res.status(404).json({ message: 'No questions found' });
-      } else {
-        const repeatedQuestion = repeatedQuestionSnapshot.docs[0].data();
-        lastFetchedQuestionIndex = repeatedQuestion.index; // Update the last fetched question index
-        res.json({ question: repeatedQuestion });
+      if (lastFetchedQuestionIndex >= questions.length) {
+        // If the index exceeds the number of questions, reset to 1
+        lastFetchedQuestionIndex = 0;
       }
-    } else {
-      const nextQuestion = nextQuestionSnapshot.docs[0].data();
-      lastFetchedQuestionIndex = nextQuestion.index; // Update the last fetched question index
+
+      const nextQuestion = questions[lastFetchedQuestionIndex];
+      lastFetchedQuestionIndex++;
+
+      // Update the last fetched question index in Firestore
+      await indexDocRef.set({ index: lastFetchedQuestionIndex });
+
       res.json({ question: nextQuestion });
+    } else {
+      res.status(404).json({ message: 'No questions found' });
     }
   } catch (error) {
     console.error('Error in get-next-question route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});
+});//updated
+
+let lastFetchedQuestionIndex = 0; // Initialize with 0
+
+// Endpoint to get the next question in sequence
+// app.get('/get-next-question', async (req, res) => {
+//   try {
+//     let query = admin.firestore().collection('questions').limit(1);
+
+//     // If lastFetchedQuestionIndex is available, query the next question after it
+//     if (lastFetchedQuestionIndex !== null) {
+//       query = query.where('index', '>', lastFetchedQuestionIndex).limit(1);
+//     }
+
+//     const nextQuestionSnapshot = await query.get();
+
+//     if (nextQuestionSnapshot.empty) {
+//       // If no more questions are found, reset to index 1 and query again
+//       lastFetchedQuestionIndex = 0;
+//       query = admin.firestore().collection('questions').where('index', '>', lastFetchedQuestionIndex).limit(1);
+//       const repeatedQuestionSnapshot = await query.get();
+
+//       if (repeatedQuestionSnapshot.empty) {
+//         res.status(404).json({ message: 'No questions found' });
+//       } else {
+//         const repeatedQuestion = repeatedQuestionSnapshot.docs[0].data();
+//         lastFetchedQuestionIndex = repeatedQuestion.index; // Update the last fetched question index
+//         res.json({ question: repeatedQuestion });
+//       }
+//     } else {
+//       const nextQuestion = nextQuestionSnapshot.docs[0].data();
+//       lastFetchedQuestionIndex = nextQuestion.index; // Update the last fetched question index
+//       res.json({ question: nextQuestion });
+//     }
+//   } catch (error) {
+//     console.error('Error in get-next-question route:', error);
+//     res.status(500).json({ message: 'Internal Server Error' });
+//   }
+// });//original
 
 
 app.post('/create-post', async (req, res) => {
@@ -548,16 +592,20 @@ app.post('/create-family-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-// API to create a new question with set information
+// API to store a question in a specific set
+// API to store a question in a specific set
 app.post('/questions', async (req, res) => {
   try {
-    const { text, options, scores, set } = req.body;
+    const { set, text, options, scores } = req.body;
 
-    const questionRef = await admin.firestore().collection('questions').add({
+    // Create a reference to the document 'questions'
+    const questionsDocRef = admin.firestore().collection('selftest').doc('questions');
+
+    // Add the question to the specified set subcollection
+    const questionRef = await questionsDocRef.collection(set).add({
       text,
       options,
       scores,
-      set, // Add set information
     });
 
     res.json({ message: 'Question added successfully', questionId: questionRef.id });
@@ -568,7 +616,39 @@ app.post('/questions', async (req, res) => {
 });
 
 
+app.post('/change-password', authenticateUser, async (req, res) => {
+  try {
+    const { uid, currentPassword, newPassword } = req.body;
 
+    // Retrieve user data from Firestore
+    const userDoc = await admin.firestore().collection('users').doc(uid).get();
+    const userData = userDoc.data();
+
+    // Verify the current password
+    const passwordMatch = await bcrypt.compare(currentPassword, userData.password);
+    if (!passwordMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Hash the new password
+    const newHashedPassword = await bcrypt.hash(newPassword, 15);
+
+    // Update the password in Firebase Authentication
+    await admin.auth().updateUser(uid, {
+      password: newHashedPassword,
+    });
+
+    // Update the password in Firestore
+    await admin.firestore().collection('users').doc(uid).update({
+      password: newHashedPassword,
+    });
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Error in changing password:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 // Start the Express server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
