@@ -592,30 +592,40 @@ app.post('/create-family-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-// API to store a question in a specific set
-// API to store a question in a specific set
+
+
 app.post('/questions', async (req, res) => {
   try {
     const { set, text, options, scores } = req.body;
 
-    // Create a reference to the document 'questions'
-    const questionsDocRef = admin.firestore().collection('selftest').doc('questions');
+    // Create a reference to the 'selftest' collection
+    const selfTestCollectionRef = admin.firestore().collection('selftest');
 
-    // Add the question to the specified set subcollection
-    const questionRef = await questionsDocRef.collection(set).add({
-      text,
-      options,
-      scores,
-    });
+    // Get the current index for the set
+    const setDoc = await selfTestCollectionRef.doc(set).get();
+    let currentIndex = 1; // Default to 1 if set doesn't exist
 
-    res.json({ message: 'Question added successfully', questionId: questionRef.id });
+    if (setDoc.exists) {
+      const setData = setDoc.data();
+      const questionIds = Object.keys(setData);
+      currentIndex = questionIds.length + 1;
+    }
+
+    // Add the question directly to the specified set with the current index
+    const questionRef = await selfTestCollectionRef.doc(set).set({
+      [currentIndex]: {
+        text,
+        options,
+        scores,
+      },
+    }, { merge: true });
+
+    res.json({ message: 'Question added successfully', questionId: currentIndex });
   } catch (error) {
     console.error('Error adding question:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
-
 app.post('/change-password', authenticateUser, async (req, res) => {
   try {
     const { uid, currentPassword, newPassword } = req.body;
