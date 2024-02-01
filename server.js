@@ -6,6 +6,8 @@ const jwt = require('jsonwebtoken');
 const bcrypt=require("bcrypt")
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
+const multer = require('multer');
+const upload = multer();
 const port = process.env.PORT || 3000;
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
@@ -15,6 +17,7 @@ const serviceAccount = require('./atman-mobile-firebase-adminsdk-9zjs1-302cbd4ff
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
+  storageBucket: 'atman-mobile.appspot.com'
 });
 
 
@@ -369,51 +372,14 @@ app.get('/get-next-question', async (req, res) => {
 
 let lastFetchedQuestionIndex = 0; // Initialize with 0
 
-// Endpoint to get the next question in sequence
-// app.get('/get-next-question', async (req, res) => {
-//   try {
-//     let query = admin.firestore().collection('questions').limit(1);
-
-//     // If lastFetchedQuestionIndex is available, query the next question after it
-//     if (lastFetchedQuestionIndex !== null) {
-//       query = query.where('index', '>', lastFetchedQuestionIndex).limit(1);
-//     }
-
-//     const nextQuestionSnapshot = await query.get();
-
-//     if (nextQuestionSnapshot.empty) {
-//       // If no more questions are found, reset to index 1 and query again
-//       lastFetchedQuestionIndex = 0;
-//       query = admin.firestore().collection('questions').where('index', '>', lastFetchedQuestionIndex).limit(1);
-//       const repeatedQuestionSnapshot = await query.get();
-
-//       if (repeatedQuestionSnapshot.empty) {
-//         res.status(404).json({ message: 'No questions found' });
-//       } else {
-//         const repeatedQuestion = repeatedQuestionSnapshot.docs[0].data();
-//         lastFetchedQuestionIndex = repeatedQuestion.index; // Update the last fetched question index
-//         res.json({ question: repeatedQuestion });
-//       }
-//     } else {
-//       const nextQuestion = nextQuestionSnapshot.docs[0].data();
-//       lastFetchedQuestionIndex = nextQuestion.index; // Update the last fetched question index
-//       res.json({ question: nextQuestion });
-//     }
-//   } catch (error) {
-//     console.error('Error in get-next-question route:', error);
-//     res.status(500).json({ message: 'Internal Server Error' });
-//   }
-// });//original
 
 
-app.post('/create-post', async (req, res) => {
+app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
-    const { uid, title, description, imageBase64 } = req.body;
+    const { uid, title, description } = req.body;
 
-    // Decode the base64-encoded image
-    const imageBuffer = Buffer.from(imageBase64, 'base64');
-
-    // Generate a unique filename for the image using uuid
+    // req.file contains information about the uploaded file
+    const imageBuffer = req.file.buffer;
     const imageFilename = `${uuidv4()}.jpg`;
 
     // Upload the image to Firebase Storage
@@ -433,6 +399,7 @@ app.post('/create-post', async (req, res) => {
       description,
       imageUrl, // Store the image URL in Firestore
       date: currentDate,
+      approved:0
     });
 
     res.json({ message: 'Post created successfully', postId: postRef.id });
@@ -441,6 +408,23 @@ app.post('/create-post', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.get('/get-unapproved-posts', async (req, res) => {
+  try {
+    // Get all posts where approved is 0
+    const postsSnapshot = await admin.firestore().collection('posts').where('approved', '==', 0).get();
+
+    // Extract post data from snapshot
+    const unapprovedPosts = postsSnapshot.docs.map(doc => doc.data());
+
+    console.log('All unapproved posts:', unapprovedPosts); // Log for debugging
+
+    res.json({ unapprovedPosts });
+  } catch (error) {
+    console.error('Error in get-unapproved-posts route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 // Function to check if a goal exists for the current date
 const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
@@ -497,6 +481,35 @@ app.post('/create-daily-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.get('/get-daily-goal', async (req, res) => {
+  try {
+    const { uid } = req.query;
+
+    if (!uid) {
+      return res.status(400).json({ message: 'UID parameter is required' });
+    }
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the daily goal document for the specified user and date
+    const dailyGoalRef = admin.firestore().collection('users').doc(uid).collection('daily_goal').doc(formattedDate);
+
+    // Get the daily goal document
+    const dailyGoalDoc = await dailyGoalRef.get();
+
+    if (dailyGoalDoc.exists) {
+      const dailyGoalData = dailyGoalDoc.data();
+      res.json({ message: 'Daily goal retrieved successfully', dailyGoal: dailyGoalData });
+    } else {
+      res.status(404).json({ message: 'Daily goal not found for the specified user and date' });
+    }
+  } catch (error) {
+    console.error('Error in get-daily-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 // API to create career goal for a user
 app.post('/create-career-goal', async (req, res) => {
   try {
@@ -626,6 +639,33 @@ app.post('/questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+app.post('/submit-answers', async (req, res) => {
+  try {
+    const { uid, answers } = req.body;
+
+    // Create a reference to the user's document
+    const userDocRef = admin.firestore().collection('users').doc(uid);
+
+    // Get the current date
+    const currentDate = new Date().toISOString();
+
+    // Create a reference to the 'selftest' subcollection for the current date
+    const selfTestCollectionRef = userDocRef.collection('selftest').doc(currentDate);
+
+    // Set the answers within the 'selftest' subcollection
+    await selfTestCollectionRef.set({ answers });
+
+    // Calculate the overall score and individual set scores
+    const overallScore = calculateOverallScore(answers);
+    const setScores = calculateSetScores(answers);
+
+    res.json({ message: 'Answers submitted successfully', overallScore, setScores });
+  } catch (error) {
+    console.error('Error submitting answers:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.post('/change-password', authenticateUser, async (req, res) => {
   try {
     const { uid, currentPassword, newPassword } = req.body;
@@ -656,6 +696,31 @@ app.post('/change-password', authenticateUser, async (req, res) => {
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
     console.error('Error in changing password:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+app.get('/get-nickname/:uid', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+
+    // Retrieve user data from Firestore using the provided UID
+    const userDocRef = admin.firestore().collection('users').doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (userDoc.exists) {
+      // Check if the user has a nickname
+      const userNickname = userDoc.data().nickname;
+
+      if (userNickname) {
+        res.json({ nickname: userNickname });
+      } else {
+        res.status(404).json({ message: 'Nickname not found for the provided UID' });
+      }
+    } else {
+      res.status(404).json({ message: 'User not found for the provided UID' });
+    }
+  } catch (error) {
+    console.error('Error getting nickname:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
