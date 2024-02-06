@@ -12,12 +12,14 @@ const port = process.env.PORT || 3000;
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
+// Serve static files from the 'public' directory
+app.use(express.static('public'));
 
-const serviceAccount = require('./atman-mobile-firebase-adminsdk-9zjs1-302cbd4ff0.json');
+const serviceAccount = require('./newkey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'atman-mobile.appspot.com'
+  storageBucket: 'psycove-4ebf5.appspot.com'
 });
 
 
@@ -172,7 +174,6 @@ app.post('/login', async (req, res) => {
 
           });
 
-          // Include the token in the response header and respond with user data
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
@@ -371,36 +372,51 @@ app.get('/get-next-question', async (req, res) => {
 });//updated
 
 let lastFetchedQuestionIndex = 0; // Initialize with 0
-
-
-
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
     const { uid, title, description } = req.body;
 
-    // req.file contains information about the uploaded file
-    const imageBuffer = req.file.buffer;
-    const imageFilename = `${uuidv4()}.jpg`;
+    let imageUrl = null;
 
-    // Upload the image to Firebase Storage
-    const storageRef = admin.storage().bucket().file(imageFilename);
-    await storageRef.save(imageBuffer, { contentType: 'image/jpeg' });
+    // Check if a file is provided in the request
+    if (req.file) {
+      // If a file is provided, process it
+      const imageBuffer = req.file.buffer;
+      const imageFilename = `${uuidv4()}.jpg`;
 
-    // Get the URL of the uploaded image
-    const imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
+      // Upload the image to Firebase Storage
+      const storageRef = admin.storage().bucket().file(imageFilename);
+      await storageRef.save(imageBuffer, { contentType: 'image/jpeg' });
+
+      // Get the URL of the uploaded image
+      imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
+    }
 
     // Get the current date
     const currentDate = new Date();
 
-    // Store the user's post in a collection (e.g., 'posts') with the image URL
-    const postRef = await admin.firestore().collection('posts').add({
-      uid,
-      title,
-      description,
-      imageUrl, // Store the image URL in Firestore
-      date: currentDate,
-      approved:0
-    });
+    // Get the reference to the user's document (or create a new one if it doesn't exist)
+    const userDocRef = admin.firestore().collection('userdocs').doc(uid);
+    const userDoc = await userDocRef.get();
+
+    // Get the current posts array or create an empty array
+    const postsArray = userDoc.exists ? userDoc.data().posts || [] : [];
+
+    // Store the user's post in the 'userdocs' collection with the image URL
+    const postRef = await userDocRef.set({
+      posts: [
+        ...postsArray,
+        {
+          uid,
+          title,
+          description,
+          imageUrl,
+          date: currentDate,
+          approved: 0,
+        },
+      ],
+      postIndex: postsArray.length + 1,
+    }, { merge: true });
 
     res.json({ message: 'Post created successfully', postId: postRef.id });
   } catch (error) {
@@ -408,6 +424,7 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 app.get('/get-unapproved-posts', async (req, res) => {
   try {
     // Get all posts where approved is 0
@@ -602,6 +619,29 @@ app.post('/create-family-goal', async (req, res) => {
     res.json({ message: 'Family goal updated successfully', goalId: familyGoalRef.id });
   } catch (error) {
     console.error('Error in create-family-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+app.get('/get-posts/:uid', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+
+    // Get the user's document
+    const userDocRef = admin.firestore().collection('userdocs').doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const postsArray = userDoc.data().posts || [];
+
+    // Sort posts based on the postIndex in descending order
+    const sortedPosts = postsArray.sort((a, b) => b.postIndex - a.postIndex);
+
+    res.json({ posts: sortedPosts });
+  } catch (error) {
+    console.error('Error in get-posts route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
