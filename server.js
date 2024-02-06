@@ -12,14 +12,12 @@ const port = process.env.PORT || 3000;
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
-// Serve static files from the 'public' directory
-app.use(express.static('public'));
 
-const serviceAccount = require('./newkey.json');
+const serviceAccount = require('./psycove-4ebf5-firebase-adminsdk-gnbn9-796f12c5ed.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'psycove-4ebf5.appspot.com'
+  storageBucket: 'atman-mobile.appspot.com'
 });
 
 
@@ -30,7 +28,6 @@ app.use(express.json());
 async function authenticateUser(req, res, next) {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'Unauthorized - Missing token' });
-
   try {
     // Verify the JWT token against Firebase Authentication
     const decodedToken = await admin.auth().verifyIdToken(token);
@@ -46,11 +43,11 @@ async function authenticateUser(req, res, next) {
 }
 
 async function isNicknameTaken(nickname) {
-  const snapshot = await admin.firestore().collection('users').where('nickname', '==', nickname).get();
+  const snapshot = await admin.firestore().collection('users').doc("userDetails").collection("details").where('nickname', '==', nickname).get();
   return !snapshot.empty;
 }
 
-app.post('/register', async (req, res) => {
+app.post('/registerUser', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -62,6 +59,7 @@ app.post('/register', async (req, res) => {
       email,
       password: hashedPassword,
     });
+    console.log("new user read");
 
     // Access the user UID from the userRecord
     const userUid = userRecord.uid;
@@ -71,7 +69,7 @@ app.post('/register', async (req, res) => {
       email,
       password:hashedPassword
     };
-    await admin.firestore().collection('users').doc(userUid).set(userData);
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userUid).set(userData);
 
     // Respond with a success message and user UID
     res.json({ message: 'Registration successful', uid: userUid });
@@ -85,7 +83,7 @@ app.post('/userdetails', async (req, res) => {
   try {
     const { uid, name, gender, age, occupation, relationshipstatus, language } = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('users').doc(uid).set(
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
         name, gender, age, occupation, relationshipstatus, language
       },
@@ -99,11 +97,11 @@ app.post('/userdetails', async (req, res) => {
   }
 });
 
-app.post('/registerphonenumber', async (req, res) => {
+app.post('/registerUserPhoneNumber', async (req, res) => {
   try {
     const { uid, phonenumber } = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('users').doc(uid).set(
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
         phonenumber,
       },
@@ -116,7 +114,7 @@ app.post('/registerphonenumber', async (req, res) => {
   }
 });
 
-app.post('/registernickname', async (req, res) => {
+app.post('/registerUserNickname', async (req, res) => {
   try {
     const { uid, nickname } = req.body;
     // Check if the nickname is already taken
@@ -125,7 +123,7 @@ app.post('/registernickname', async (req, res) => {
       return res.status(400).json({ message: 'Nickname is already taken' });
     }
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('users').doc(uid).set(
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
         nickname,
       },
@@ -140,7 +138,7 @@ app.post('/registernickname', async (req, res) => {
 
 
 // login route
-app.post('/login', async (req, res) => {
+app.post('/UserLogin', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -149,7 +147,7 @@ app.post('/login', async (req, res) => {
 
     if (userRecord) {
       // Retrieve user data from Firestore, assuming you have a 'users' collection
-      const userDocRef = admin.firestore().collection('users').doc(userRecord.uid);
+      const userDocRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid);
       const userDoc = await userDocRef.get();
 
       if (userDoc.exists) {
@@ -174,6 +172,7 @@ app.post('/login', async (req, res) => {
 
           });
 
+          // Include the token in the response header and respond with user data
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
@@ -372,51 +371,34 @@ app.get('/get-next-question', async (req, res) => {
 });//updated
 
 let lastFetchedQuestionIndex = 0; // Initialize with 0
+
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
     const { uid, title, description } = req.body;
 
-    let imageUrl = null;
+    // req.file contains information about the uploaded file
+    const imageBuffer = req.file.buffer;
+    const imageFilename = `${uuidv4()}.jpg`;
 
-    // Check if a file is provided in the request
-    if (req.file) {
-      // If a file is provided, process it
-      const imageBuffer = req.file.buffer;
-      const imageFilename = `${uuidv4()}.jpg`;
+    // Upload the image to Firebase Storage
+    const storageRef = admin.storage().bucket().file(imageFilename);
+    await storageRef.save(imageBuffer, { contentType: 'image/jpeg' });
 
-      // Upload the image to Firebase Storage
-      const storageRef = admin.storage().bucket().file(imageFilename);
-      await storageRef.save(imageBuffer, { contentType: 'image/jpeg' });
-
-      // Get the URL of the uploaded image
-      imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
-    }
+    // Get the URL of the uploaded image
+    const imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
 
     // Get the current date
     const currentDate = new Date();
 
-    // Get the reference to the user's document (or create a new one if it doesn't exist)
-    const userDocRef = admin.firestore().collection('userdocs').doc(uid);
-    const userDoc = await userDocRef.get();
-
-    // Get the current posts array or create an empty array
-    const postsArray = userDoc.exists ? userDoc.data().posts || [] : [];
-
-    // Store the user's post in the 'userdocs' collection with the image URL
-    const postRef = await userDocRef.set({
-      posts: [
-        ...postsArray,
-        {
-          uid,
-          title,
-          description,
-          imageUrl,
-          date: currentDate,
-          approved: 0,
-        },
-      ],
-      postIndex: postsArray.length + 1,
-    }, { merge: true });
+    // Store the user's post in a collection (e.g., 'posts') with the image URL
+    const postRef = await admin.firestore().collection('posts').add({
+      uid,
+      title,
+      description,
+      imageUrl, // Store the image URL in Firestore
+      date: currentDate,
+      approved:0
+    });
 
     res.json({ message: 'Post created successfully', postId: postRef.id });
   } catch (error) {
@@ -424,7 +406,6 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
 app.get('/get-unapproved-posts', async (req, res) => {
   try {
     // Get all posts where approved is 0
@@ -622,29 +603,6 @@ app.post('/create-family-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-app.get('/get-posts/:uid', async (req, res) => {
-  try {
-    const uid = req.params.uid;
-
-    // Get the user's document
-    const userDocRef = admin.firestore().collection('userdocs').doc(uid);
-    const userDoc = await userDocRef.get();
-
-    if (!userDoc.exists) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const postsArray = userDoc.data().posts || [];
-
-    // Sort posts based on the postIndex in descending order
-    const sortedPosts = postsArray.sort((a, b) => b.postIndex - a.postIndex);
-
-    res.json({ posts: sortedPosts });
-  } catch (error) {
-    console.error('Error in get-posts route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
 
 
 app.post('/questions', async (req, res) => {
@@ -744,7 +702,7 @@ app.get('/get-nickname/:uid', async (req, res) => {
     const uid = req.params.uid;
 
     // Retrieve user data from Firestore using the provided UID
-    const userDocRef = admin.firestore().collection('users').doc(uid);
+    const userDocRef = admin.firestore().collection('users').doc("userDetails").collection().doc(uid);
     const userDoc = await userDocRef.get();
 
     if (userDoc.exists) {
@@ -764,6 +722,211 @@ app.get('/get-nickname/:uid', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+async function authenticatePsychologist(req, res, next) {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ message: 'Unauthorized - Missing token' });
+  try {
+    // Verify the JWT token against Firebase Authentication
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Add the user UID to the request object for further processing
+    req.psychologistid = decodedToken.uid;
+
+    next();
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    res.status(401).json({ message: 'Unauthorized - Invalid token' });
+  }
+}
+
+//checking Name of psychologists
+async function isPsychologistNicknameTaken(nickname) {
+  const snapshot = await admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").where('nickname', '==', nickname).get();
+  return !snapshot.empty;
+}
+
+//register the psychologists name 
+app.post('/registerPsychologist', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Hash the password using bcrypt with a salt factor of 15
+    const hashedPassword = await bcrypt.hash(password, 15);
+
+    // Create a new user in Firebase Authentication with email and hashed password
+    const psychologistRecord = await admin.auth().createUser({
+      email,
+      password: hashedPassword,
+    });
+
+    // Access the user UID from the psychologistRecord
+    const psychologistUid = psychologistRecord.uid;
+
+    // Store additional user data in Firestore (excluding password)
+    const psychologistData = {
+      email,
+      password:hashedPassword
+    };
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(psychologistUid).set(psychologistData);
+
+    // Respond with a success message and user UID
+    res.json({ message: 'Registration successful', uid: psychologistUid });
+  } catch (error) {
+    console.error('Error in registration:', error);
+
+    // Check for the specific error code related to existing email
+    if (error.code === 'auth/email-already-exists') {
+      return res.status(400).json({ message: 'Email address already in use' });
+    }
+
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/psychologistdetails', async (req, res) => {
+  try {
+    const { uid, name, gender, age, languages, area_of_expertise} = req.body;
+    // Update user data in Firestore (add or update the nickname)
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+      {
+        name, gender, age, languages, area_of_expertise
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+
+    res.json({ message: 'Psychologist details saved successfully', uid:uid });
+  } catch (error) {
+    console.error('Error in psychologist details registration step:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/registerPsychologistPhoneNumber', async (req, res) => {
+  try {
+    const { uid, phonenumber } = req.body;
+    // Update user data in Firestore (add or update the nickname)
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+      {
+        phonenumber,
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+    res.json({ message: 'phone number saved successfully', uid: uid });
+  } catch (error) {
+    console.error('Error in phone number registration step:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/registerPsychologistNickname', async (req, res) => {
+  try {
+    const { uid, nickname } = req.body;
+    // Check if the nickname is already taken
+    const nicknameExists = await isPsychologistNicknameTaken(nickname);
+    if (nicknameExists) {
+      return res.status(400).json({ message: 'Nickname is already taken' });
+    }
+    // Update user data in Firestore (add or update the nickname)
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+      {
+        nickname,
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+    res.json({ message: 'Psychologist nickname added registered successfully', uid: uid });
+  } catch (error) {
+    console.error('Error in nickname registration step:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+//psychologist login route
+app.post('/psychologistLogin', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Retrieve psychologist by email using the admin SDK
+    const psychologistRecord = await admin.auth().getUserByEmail(email);
+    console.log("psychologist exists", psychologistRecord);
+    if (psychologistRecord) {
+      // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
+      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.uid);
+      const psychologistDoc = await psychologistDocRef.get();
+      
+      if (psychologistDoc.exists) {
+        // Check if the psychologist has a nickname
+        const psychologistNickname = psychologistDoc.data().nickname;
+
+        if (!psychologistNickname) {
+          // Remove psychologist details if registration is incomplete
+          await psychologistDocRef.delete();
+          return res.status(401).json({ message: 'Incomplete Registration - User details removed' });
+        }
+
+        // Retrieve hashed password from Firestore
+        const storedHashedPassword = psychologistDoc.data().password;
+
+        // Verify the entered password with the stored hashed password
+        const isPasswordValid = await bcrypt.compare(password, storedHashedPassword);
+
+        if (isPasswordValid) {
+          // Generate JWT token with psychologist UID and email
+          const token = jwt.sign({ uid: psychologistRecord.uid, email: psychologistRecord.email }, 'atmanapplication', {
+
+          });
+
+          // Include the token in the response header and respond with psychologist data
+          res.header('Authorization', `Bearer ${token}`);
+          res.json({
+            message: 'Login successful',
+            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistNickname},
+          });
+        } else {
+          res.status(401).json({ message: 'Invalid email or password' });
+        }
+      } else {
+        res.status(404).json({ message: 'Psychologist not found in Firestore' });
+      }
+    } else {
+      res.status(404).json({ message: 'Psychologist not found' });
+    }
+  } catch (error) {
+    console.error('Error during login:', error);
+
+    // Handle specific authentication errors
+    if (error.code === 'auth/user-not-found' )  {
+      res.status(401).json({ message: 'Invalid email' });
+    }else if(error.code === 'auth/wrong-password'){
+      res.status(401).json({ message: 'Invalid password' });
+    } else {
+      res.status(500).json({ message: 'Internal Server Error' });
+    }
+  }
+});
+
+const psychologistTokenBlacklist = [];
+//logout route
+app.post('/psychologistLogout', (req, res) => {
+  try {
+    // Extract token from the Authorization header
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+
+    // Check if the token is in the blacklist
+    if (token && psychologistTokenBlacklist.includes(token)) {
+      res.status(401).json({ message: 'Token has already been revoked' });
+    } else {
+      // Add the token to the blacklist (for demonstration purposes)
+      psychologistTokenBlacklist.push(token);
+
+      res.json({ message: 'Logout successful' });
+    }
+  } catch (error) {
+    console.error('Error during logout:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 // Start the Express server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
