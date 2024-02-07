@@ -13,7 +13,7 @@ const port = process.env.PORT || 3000;
 
 // Initialize Firebase Admin SDK
 
-const serviceAccount = require('./psycove-4ebf5-firebase-adminsdk-gnbn9-796f12c5ed.json');
+const serviceAccount = require('./newkey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
