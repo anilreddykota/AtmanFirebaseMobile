@@ -97,23 +97,6 @@ app.post('/userdetails', async (req, res) => {
   }
 });
 
-app.post('/registerUserPhoneNumber', async (req, res) => {
-  try {
-    const { uid, phonenumber } = req.body;
-    // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
-      {
-        phonenumber,
-      },
-      { merge: true } // This option ensures that existing data is not overwritten
-    );
-    res.json({ message: 'phone number saved successfully', uid: uid });
-  } catch (error) {
-    console.error('Error in phone number registration step:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
-
 app.post('/registerUserNickname', async (req, res) => {
   try {
     const { uid, nickname } = req.body;
@@ -221,42 +204,39 @@ app.post('/logout', (req, res) => {
   }
 });
 
-// Generate an OTP and send it to the user's email
-app.post('/forgot-password', async (req, res) => {
+app.post('/generateOtp', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { uid, email } = req.body;
 
-    // Retrieve user by email using the admin SDK
-    const userRecord = await admin.auth().getUserByEmail(email);
+    // Generate a random OTP
     const otpLength = 4;
     let otp = '';
-
     for (let i = 0; i < otpLength; i++) {
       otp += Math.floor(Math.random() * 10).toString();
     }
-    // Save the OTP in Firestore (or any other persistent storage)
-    await admin.firestore().collection('otp').doc(userRecord.uid).set({
+
+    // Save the OTP in Firestore under the user's UID
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).update({
       otp,
     });
 
-    // Send OTP to user's email
+    // Send OTP to the user's email
     const transporter = nodemailer.createTransport({
-      // Configure your email service here
       service: 'gmail',
       auth: {
         user: 'psycove.innerself@gmail.com',
         pass: 'kjrqzsjvbapkoqbw',
       },
       tls: {
-        rejectUnauthorized: false, // Accept self-signed certificates call gmeet /
+        rejectUnauthorized: false,
       },
     });
-    console.log(otp)
+
     const mailOptions = {
       from: 'psycove.innerself@gmail.com',
       to: email,
       subject: 'Password Reset OTP',
-      text: `Your OTP for password reset is: ${otp}`
+      text: `Your OTP for password reset is: ${otp}`,
     };
 
     await transporter.sendMail(mailOptions);
@@ -268,12 +248,14 @@ app.post('/forgot-password', async (req, res) => {
   }
 });
 
+
+// POST method for verify-otp endpoint
 app.post('/verify-otp', async (req, res) => {
   try {
     const { uid, enteredOtp } = req.body;
 
-    // Retrieve stored OTP from Firestore
-    const otpDocRef = admin.firestore().collection('otp').doc(uid);
+    // Retrieve stored OTP from Firestore using the provided UID
+    const otpDocRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid);
     const otpDoc = await otpDocRef.get();
 
     if (otpDoc.exists) {
@@ -283,12 +265,10 @@ app.post('/verify-otp', async (req, res) => {
       if (enteredOtp === storedOtp) {
         // OTP verification successful
         // Delete the OTP from Firestore
-        await otpDocRef.delete();
+        await otpDocRef.update({ otp: admin.firestore.FieldValue.delete() });
         res.status(200).json({ message: 'OTP verification successful' });
       } else {
         // Incorrect OTP
-        // Also, delete the incorrect OTP from Firestore for security
-        await otpDocRef.delete();
         res.status(400).json({ message: 'Incorrect OTP' });
       }
     } else {
@@ -296,10 +276,14 @@ app.post('/verify-otp', async (req, res) => {
       res.status(404).json({ message: 'OTP not found' });
     }
   } catch (error) {
-    console.error('Error in verify OTP route:', error);
+    console.error('Error in POST verify OTP route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+
+
+
 // Middleware to get the current question count
 async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
