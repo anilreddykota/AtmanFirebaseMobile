@@ -670,13 +670,15 @@ app.post('/create-learning-goal', async (req, res) => {
 
 // API to create family goal for a user
 
-
 app.post('/questions', async (req, res) => {
   try {
     const { set, text, options, scores } = req.body;
 
-    // Create a reference to the 'selftest' collection
-    const selfTestCollectionRef = admin.firestore().collection('selftest');
+    // Create a reference to the 'users' collection
+    const usersCollectionRef = admin.firestore().collection('users');
+
+    // Create a reference to the 'selftest' subcollection under 'users'
+    const selfTestCollectionRef = usersCollectionRef.doc('selftest').collection('questions');
 
     // Get the current index for the set
     const setDoc = await selfTestCollectionRef.doc(set).get();
@@ -703,6 +705,7 @@ app.post('/questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
 app.post('/submit-answers', async (req, res) => {
   try {
     const { uid, answers } = req.body;
