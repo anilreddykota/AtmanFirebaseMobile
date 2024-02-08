@@ -289,25 +289,92 @@ async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
   return snapshot.size + 1; // Incrementing the count for the next question
 }
+// app.post('/store-question', async (req, res) => {
+//   try {
+//     const { question } = req.body;
+
+//     // Get the reference to the document
+//     const dailyJournalRef = admin.firestore().collection('users').doc('dailyjournal');
+
+//     // Get the current questions data
+//     const dailyJournalDoc = await dailyJournalRef.get();
+//     let dailyJournalData = dailyJournalDoc.exists ? dailyJournalDoc.data() : { questions: {} };
+
+//     // Get the index for the new question
+//     const index = Object.keys(dailyJournalData.questions).length + 1;
+
+//     // Add the new question to the questions object with the index mapping
+//     dailyJournalData.questions[index] = question;
+
+//     // Update the document in Firestore
+//     await dailyJournalRef.set(dailyJournalData);
+
+//     res.json({ message: 'Question stored successfully', index, question });
+//   } catch (error) {
+//     console.error('Error in store-question route:', error);
+//     res.status(500).json({ message: 'Internal Server Error' });
+//   }
+// });
+
+
+
+// app.get('/get-next-question', async (req, res) => {
+//   try {
+//     // Get the reference to the document containing the last fetched question index
+//     const indexDocRef = admin.firestore().collection('users').doc('dailyjournal').collection('lastFetchedQuestionIndex');
+    
+//     // Get the current index data
+//     const indexDoc = await indexDocRef.get();
+//     let lastFetchedQuestionIndex = indexDoc.exists ? indexDoc.data().index : 0;
+
+//     // Query the next question
+//     let query = admin.firestore().collection('users').doc('dailyjournal').collection('questions').doc(lastFetchedQuestionIndex.toString());
+
+//     // Get the next question
+//     const questionDoc = await query.get();
+
+//     if (questionDoc.exists) {
+//       const nextQuestion = questionDoc.data().question;
+      
+//       // Increment the index for the next question
+//       lastFetchedQuestionIndex++;
+
+//       // Update the last fetched question index in Firestore
+//       await indexDocRef.set({ index: lastFetchedQuestionIndex });
+
+//       res.json({ question: nextQuestion });
+//     } else {
+//       res.status(404).json({ message: 'No questions found' });
+//     }
+//   } catch (error) {
+//     console.error('Error in get-next-question route:', error);
+//     res.status(500).json({ message: 'Internal Server Error' });
+//   }
+// });
+// Initialize with 0
 app.post('/store-question', async (req, res) => {
   try {
     const { question } = req.body;
 
-    // Get the reference to the document
-    const questionsDocRef = admin.firestore().collection('questionCollection').doc('dailyjournalquestions');
+    // Get the reference to the dailyjournal document
+    const dailyJournalRef = admin.firestore().collection('users').doc('dailyjournal');
 
-    // Get the current questions data
-    const questionsDoc = await questionsDocRef.get();
-    let questionsData = questionsDoc.exists ? questionsDoc.data() : { questions: [] };
+    // Get the current data of the dailyjournal document
+    const dailyJournalDoc = await dailyJournalRef.get();
+    let dailyJournalData = dailyJournalDoc.exists ? dailyJournalDoc.data() : { questions: [] };
 
-    // Add the new question to the array with an index
-    const newQuestion = { index: questionsData.questions.length + 1, question };
-    questionsData.questions.push(newQuestion);
+    // Ensure questions field is initialized as an array
+    if (!Array.isArray(dailyJournalData.questions)) {
+      dailyJournalData.questions = [];
+    }
 
-    // Update the document in Firestore
-    await questionsDocRef.set(questionsData);
+    // Add the new question to the questions array with the index mapping
+    dailyJournalData.questions.push({ question });
 
-    res.json({ message: 'Question stored successfully', newQuestion });
+    // Update the dailyjournal document in Firestore
+    await dailyJournalRef.set(dailyJournalData);
+
+    res.json({ message: 'Question stored successfully', question });
   } catch (error) {
     console.error('Error in store-question route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -315,34 +382,26 @@ app.post('/store-question', async (req, res) => {
 });
 app.get('/get-next-question', async (req, res) => {
   try {
-    // Get the reference to the document containing the last fetched question index
-    const indexDocRef = admin.firestore().collection('questionCollection').doc('lastFetchedQuestionIndex');
-    
-    // Get the current index data
-    const indexDoc = await indexDocRef.get();
-    let lastFetchedQuestionIndex = indexDoc.exists ? indexDoc.data().index : 0;
+    // Get the reference to the dailyjournal document
+    const dailyJournalRef = admin.firestore().collection('users').doc('dailyjournal');
 
-    // Query the next question
-    let query = admin.firestore().collection('questionCollection').doc('dailyjournalquestions');
+    // Get the current data of the dailyjournal document
+    const dailyJournalDoc = await dailyJournalRef.get();
+    const dailyJournalData = dailyJournalDoc.exists ? dailyJournalDoc.data() : { questions: [] };
 
-    // If lastFetchedQuestionIndex is available, query the next question after it
-    query = query.get();
-    const questionsDoc = await query;
+    // Check if there are questions available
+    if (dailyJournalData.questions.length > 0) {
+      // Get the index of the next question
+      let nextQuestionIndex = dailyJournalData.nextQuestionIndex || 0;
 
-    if (questionsDoc.exists) {
-      const questionsData = questionsDoc.data();
-      const questions = questionsData.questions;
+      // Get the next question from the questions array
+      const nextQuestion = dailyJournalData.questions[nextQuestionIndex].question;
 
-      if (lastFetchedQuestionIndex >= questions.length) {
-        // If the index exceeds the number of questions, reset to 1
-        lastFetchedQuestionIndex = 0;
-      }
+      // Increment the index for the next question
+      nextQuestionIndex = (nextQuestionIndex + 1) % dailyJournalData.questions.length;
 
-      const nextQuestion = questions[lastFetchedQuestionIndex];
-      lastFetchedQuestionIndex++;
-
-      // Update the last fetched question index in Firestore
-      await indexDocRef.set({ index: lastFetchedQuestionIndex });
+      // Update the next question index in the document
+      await dailyJournalRef.update({ nextQuestionIndex });
 
       res.json({ question: nextQuestion });
     } else {
@@ -352,21 +411,20 @@ app.get('/get-next-question', async (req, res) => {
     console.error('Error in get-next-question route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-});//updated
+});
 
-let lastFetchedQuestionIndex = 0; // Initialize with 0
+
+
 
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
-    const { uid, title, description } = req.body;
-
-    // req.file contains information about the uploaded file
-    const imageBuffer = req.file.buffer;
-    const imageFilename = `${uuidv4()}.jpg`;
+    const { title, description } = req.body;
+    const { buffer } = req.file;
 
     // Upload the image to Firebase Storage
+    const imageFilename = `${uuidv4()}.jpg`;
     const storageRef = admin.storage().bucket().file(imageFilename);
-    await storageRef.save(imageBuffer, { contentType: 'image/jpeg' });
+    await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
     // Get the URL of the uploaded image
     const imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
@@ -374,22 +432,40 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
     // Get the current date
     const currentDate = new Date();
 
-    // Store the user's post in a collection (e.g., 'posts') with the image URL
-    const postRef = await admin.firestore().collection('posts').add({
-      uid,
+    // Create a new post object
+    const post = {
       title,
       description,
-      imageUrl, // Store the image URL in Firestore
+      imageUrl,
       date: currentDate,
-      approved:0
-    });
+      approved: 0
+    };
 
-    res.json({ message: 'Post created successfully', postId: postRef.id });
+    // Reference to the "posts" document in the "users" collection
+    const postsDocRef = admin.firestore().collection('users').doc('posts');
+
+    // Retrieve the current posts data
+    const postsDoc = await postsDocRef.get();
+
+    if (postsDoc.exists) {
+      // If the "posts" document already exists, update it with the new post
+      await postsDocRef.update({
+        posts: admin.firestore.FieldValue.arrayUnion(post)
+      });
+    } else {
+      // If the "posts" document does not exist, create it with the new post
+      await postsDocRef.set({
+        posts: [post]
+      });
+    }
+
+    res.json({ message: 'Post created successfully' });
   } catch (error) {
     console.error('Error in create-post route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 app.get('/get-unapproved-posts', async (req, res) => {
   try {
     // Get all posts where approved is 0
@@ -441,28 +517,56 @@ const formatDateForDocumentId = (date) => {
 };
 
 // API to create daily goal for a user
-app.post('/create-daily-goal', async (req, res) => {
+app.post('/create-work-goal', async (req, res) => {
   try {
-    const { uid, goal } = req.body;
+    const { uid, workGoal } = req.body;
 
+    // Get the current date
     const currentDate = new Date();
     const formattedDate = formatDateForDocumentId(currentDate);
 
     // Create a reference to the document based on user's UID and the formatted date
-    const dailyGoalRef = admin.firestore().collection('users').doc(uid).collection('daily_goal').doc(formattedDate);
+    const workGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
+                            .collection('workGoal').doc(formattedDate);
 
-    // Update the goal or create a new document if it doesn't exist
-    await dailyGoalRef.set({
-      goal,
+    // Set the work goal document with the provided work goal and current date
+    await workGoalRef.set({
+      workGoal,
       date: currentDate,
-    }, { merge: true }); // Use merge option to update existing fields without overwriting
+    }, { merge: true }); // Merge with existing data if document already exists
 
-    res.json({ message: 'Daily goal updated successfully', goalId: dailyGoalRef.id });
+    res.json({ message: 'Work goal created successfully', goalId: workGoalRef.id });
   } catch (error) {
-    console.error('Error in create-daily-goal route:', error);
+    console.error('Error in create-work-goal route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+app.post('/create-personal-goal', async (req, res) => {
+  try {
+    const { uid, personalGoal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on the user's UID and the formatted date
+    const personalGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('personal_goal').doc(formattedDate);
+
+    // Update the personal goal or create a new document if it doesn't exist
+    await personalGoalRef.set({
+      personalGoal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Personal goal updated successfully', goalId: personalGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-personal-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
 app.get('/get-daily-goal', async (req, res) => {
   try {
     const { uid } = req.query;
@@ -491,21 +595,19 @@ app.get('/get-daily-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-// API to create career goal for a user
 app.post('/create-career-goal', async (req, res) => {
   try {
-    const { uid, goal } = req.body;
+    const { uid, careerGoal } = req.body;
 
     const currentDate = new Date();
     const formattedDate = formatDateForDocumentId(currentDate);
 
-    // Create a reference to the document based on user's UID and the formatted date
-    const careerGoalRef = admin.firestore().collection('users').doc(uid).collection('career_goal').doc(formattedDate);
+    // Create a reference to the document based on the user's UID and the formatted date
+    const careerGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('career_goal').doc(formattedDate);
 
-    // Update the goal or create a new document if it doesn't exist
+    // Update the career goal or create a new document if it doesn't exist
     await careerGoalRef.set({
-      goal,
+      careerGoal,
       date: currentDate,
     }, { merge: true });
 
@@ -515,21 +617,41 @@ app.post('/create-career-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-// API to create learning goal for a user
-app.post('/create-learning-goal', async (req, res) => {
+app.post('/create-family-goal', async (req, res) => {
   try {
-    const { uid, goal } = req.body;
+    const { uid, familyGoal } = req.body;
 
     const currentDate = new Date();
     const formattedDate = formatDateForDocumentId(currentDate);
 
-    // Create a reference to the document based on user's UID and the formatted date
-    const learningGoalRef = admin.firestore().collection('users').doc(uid).collection('learning_goal').doc(formattedDate);
+    // Create a reference to the document based on the user's UID and the formatted date
+    const familyGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('family_goal').doc(formattedDate);
 
-    // Update the goal or create a new document if it doesn't exist
+    // Update the family goal or create a new document if it doesn't exist
+    await familyGoalRef.set({
+      familyGoal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Family goal updated successfully', goalId: familyGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-family-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+app.post('/create-learning-goal', async (req, res) => {
+  try {
+    const { uid, learningGoal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on the user's UID and the formatted date
+    const learningGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('learning_goal').doc(formattedDate);
+
+    // Update the learning goal or create a new document if it doesn't exist
     await learningGoalRef.set({
-      goal,
+      learningGoal,
       date: currentDate,
     }, { merge: true });
 
@@ -540,53 +662,13 @@ app.post('/create-learning-goal', async (req, res) => {
   }
 });
 
-// API to create personal goal for a user
-app.post('/create-personal-goal', async (req, res) => {
-  try {
-    const { uid, goal } = req.body;
 
-    const currentDate = new Date();
-    const formattedDate = formatDateForDocumentId(currentDate);
 
-    // Create a reference to the document based on user's UID and the formatted date
-    const personalGoalRef = admin.firestore().collection('users').doc(uid).collection('personal_goal').doc(formattedDate);
 
-    // Update the goal or create a new document if it doesn't exist
-    await personalGoalRef.set({
-      goal,
-      date: currentDate,
-    }, { merge: true });
 
-    res.json({ message: 'Personal goal updated successfully', goalId: personalGoalRef.id });
-  } catch (error) {
-    console.error('Error in create-personal-goal route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
+
 
 // API to create family goal for a user
-app.post('/create-family-goal', async (req, res) => {
-  try {
-    const { uid, goal } = req.body;
-
-    const currentDate = new Date();
-    const formattedDate = formatDateForDocumentId(currentDate);
-
-    // Create a reference to the document based on user's UID and the formatted date
-    const familyGoalRef = admin.firestore().collection('users').doc(uid).collection('family_goal').doc(formattedDate);
-
-    // Update the goal or create a new document if it doesn't exist
-    await familyGoalRef.set({
-      goal,
-      date: currentDate,
-    }, { merge: true });
-
-    res.json({ message: 'Family goal updated successfully', goalId: familyGoalRef.id });
-  } catch (error) {
-    console.error('Error in create-family-goal route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
 
 
 app.post('/questions', async (req, res) => {
