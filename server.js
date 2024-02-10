@@ -8,7 +8,7 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const upload = multer();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3001;
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
@@ -995,6 +995,179 @@ app.post('/psychologistLogout', (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+//book Appointment
+app.post('/bookAppointment', async (req, res) => {
+  try {
+    const { uid, date, timeSlot, puid } = req.body;
+
+    // Reference a new document in the 'appointments' collection (Firestore will generate a unique ID)
+    const appointmentRef = admin.firestore().collection('appointments').doc();
+
+    // Get the generated ID from the document reference
+    const appointmentId = appointmentRef.id;
+
+    // Set data for the specific document, including the appointment ID
+    await appointmentRef.set({
+      appointmentId: appointmentId,
+      uid: uid,
+      date: date,
+      timeSlot: timeSlot,
+      puid: puid,
+      status: "pending"
+    });
+
+    res.json({ message: 'Appointment booked successfully', appointmentId: appointmentId });
+  } catch (error) {
+    console.error('Error booking appointment:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
+
+app.post('/updateAppointmentStatus', async (req, res) => {
+  try {
+    const { appointmentId, status } = req.body;
+
+    // Check if the appointmentId and status are provided
+    if (!appointmentId || !status) {
+      return res.status(400).json({ message: 'Invalid request. Missing appointmentId or status.' });
+    }
+
+    // Update the status of the existing appointment document in Firestore
+    const appointmentRef = admin.firestore().collection('appointments').doc(appointmentId);
+    
+    // Check if the appointment exists
+    const appointmentSnapshot = await appointmentRef.get();
+    if (!appointmentSnapshot.exists) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    // Update the status field
+    await appointmentRef.update({ status: status });
+
+    res.json({ message: 'Appointment status updated successfully', appointmentId: appointmentId });
+  } catch (error) {
+    console.error('Error updating appointment status:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/getAppointmentsByDoctor', async (req, res) => {
+  try {
+    const { puid } = req.body;
+    if (!puid) {
+      return res.status(400).json({ message: 'Invalid request. Missing puid parameter in the request body.' });
+    }
+    // Query appointments in Firestore based on the specified puid
+    const appointmentsSnapshot = await admin.firestore().collection('appointments')
+      .where('puid', '==', puid)
+      .get();
+    // Extract appointment data from the query snapshot
+    const appointments = [];
+    appointmentsSnapshot.forEach(doc => {
+      const appointmentData = doc.data();
+      appointments.push({
+        id: doc.id,
+        uid: appointmentData.uid,
+        date: appointmentData.date,
+        timeSlot: appointmentData.timeSlot,
+        status: appointmentData.status
+        
+      });
+    });
+
+    res.json({ appointments: appointments });
+  } catch (error) {
+    console.error('Error retrieving appointments:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/addAppointmentToDoctorList', async (req, res) => {
+  try {
+    const { puid, nickname, appointmentId } = req.body;
+
+    // Check if both puid and nickname are provided
+    if (!puid || !nickname) {
+      return res.status(400).json({ message: 'Invalid request. Missing puid or nickname parameter in the request body.' });
+    }
+    // Get the UID associated with the provided nickname
+    const userSnapshot = await admin.firestore()
+    .collection('users')
+    .doc("userDetails")
+    .collection("details")
+    .where('nickname', '==', nickname)
+    .limit(1)
+    .get();
+  
+  if (userSnapshot.empty) {
+    return res.status(404).json({ message: 'User with the provided nickname not found.' });
+  }
+    // Assuming there's only one user with the provided nickname, get their UID
+    const userData = userSnapshot.docs[0];
+    const uid = userData.id;
+    // Reference a new document in the 'doctorAppointments' collection (Firestore will generate a unique ID)
+    const doctorAppointmentRef = admin.firestore().collection('appointments').doc('Approved').collection('doctorAppointments').doc();
+
+    // Get the generated ID from the document reference
+    const appointmentApprovedId = doctorAppointmentRef.id;
+
+    // Set data for the specific document, including the appointment ID, doctor's user id, client's user id, and any other relevant information
+    await doctorAppointmentRef.set({
+      appointmentApprovedId: appointmentApprovedId,
+      appointmentId: appointmentId,
+      puid: puid,
+      uid: uid, // Use the retrieved UID
+      status: "Approved"
+    });
+
+    res.json({ message: 'Appointment added to doctor list successfully', appointmentId: appointmentId });
+  } catch (error) {
+    console.error('Error adding appointment to doctor list:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post("/assignTasksToClient", async (req, res) => {
+  try {
+    const { uid, puid, tasks } = req.body;
+
+    // Check if all required parameters are provided
+    if (!uid || !puid || !tasks || !Array.isArray(tasks)) {
+      return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or tasks parameter in the request body.' });
+    }
+
+    // Reference a new document in the 'tasksToClients' collection (Firestore will generate a unique ID)
+    const tasksToClientRef = admin.firestore().collection('tasksToClients').doc();
+
+    // Get the generated ID from the document reference
+    const taskId = tasksToClientRef.id;
+
+    // Set data for the specific document, including the task ID, doctor's user id, client's user id, and tasks array
+    await tasksToClientRef.set({
+      taskId: taskId,
+      puid: puid,
+      uid: uid,
+      tasks: tasks,
+      status: "assigned"
+    
+    });
+
+    res.json({ message: 'Tasks assigned to client successfully', taskId: taskId });
+  } catch (error) {
+    console.error('Error assigning tasks to client:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
+
+
+
+
+
+
 
 // Start the Express server
 app.listen(port, () => {
