@@ -8,7 +8,7 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const upload = multer();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3000;
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
