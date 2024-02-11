@@ -1173,7 +1173,7 @@ app.post("/assignTasksToClient", async (req, res) => {
     }
 
     // Reference a new document in the 'tasksToClients' collection (Firestore will generate a unique ID)
-    const tasksToClientRef = admin.firestore().collection('tasksToClients').doc();
+    const tasksToClientRef = admin.firestore().collection('appointments').doc('Conversations').collection('tasksToClients').doc();
 
     // Get the generated ID from the document reference
     const taskId = tasksToClientRef.id;
@@ -1204,7 +1204,7 @@ app.post('/createChatConversation', async (req, res) => {
     }
 
     // Reference a new document in the 'chatConversations' collection (Firestore will generate a unique ID)
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc();
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc();
 
     // Get the generated ID from the document reference
     const conversationId = chatConversationRef.id;
@@ -1234,7 +1234,7 @@ app.post('/sendMessage', async (req, res) => {
     }
 
     // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc(conversationId);
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
 
     // Get the current conversation data
     const chatConversationDoc = await chatConversationRef.get();
@@ -1278,7 +1278,7 @@ app.get('/getMessages/:conversationId', async (req, res) => {
     }
 
     // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc(conversationId);
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
 
     // Get the chat conversation document
     const chatConversationDoc = await chatConversationRef.get();
