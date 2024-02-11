@@ -17,7 +17,7 @@ const serviceAccount = require('./newkey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'atman-mobile.appspot.com'
+  storageBucket: 'psycove-4ebf5.appspot.com'
 });
 
 
@@ -47,37 +47,154 @@ async function isNicknameTaken(nickname) {
   return !snapshot.empty;
 }
 
+
 app.post('/registerUser', async (req, res) => {
   try {
-    const { email, password } = req.body;
+      const { email, password } = req.body;
 
-    // Hash the password using bcrypt with a salt factor of 10
-    const hashedPassword = await bcrypt.hash(password, 15);
+      // Check if user exists
+      let existingUserRecord;
+      try {
+          existingUserRecord = await admin.auth().getUserByEmail(email);
+      } catch (error) {
+          // If no user record found, proceed with registration
+          if (error.code !== 'auth/user-not-found') {
+              throw error; // Rethrow other errors
+          }
+      }
 
-    // Create a new user in Firebase Authentication with email and hashed password
-    const userRecord = await admin.auth().createUser({
-      email,
-      password: hashedPassword,
-    });
-    console.log("new user read");
+      if (existingUserRecord) {
+          // User already exists
+          const userData = existingUserRecord.toJSON();
+          if (!userData || !userData.nickname) {
+              // User doesn't have a nickname, update details and re-register
+              await updateUserAndReRegister(existingUserRecord.uid, email, password);
+              return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
+          } else {
+              // User already registered with a nickname
+              return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
+          }
+      } else {
+          // User doesn't exist, create a new user
+          const userRecord = await admin.auth().createUser({
+              email,
+              password: await bcrypt.hash(password, 15)
+          });
 
-    // Access the user UID from the userRecord
-    const userUid = userRecord.uid;
+          // Store user details in Firestore
+          await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set({
+              email,
+              password: userRecord.passwordHash
+          });
 
-    // Store additional user data in Firestore (excluding password)
-    const userData = {
-      email,
-      password:hashedPassword
-    };
-    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userUid).set(userData);
-
-    // Respond with a success message and user UID
-    res.json({ message: 'Registration successful', uid: userUid });
+          // Respond with a success message and user UID
+          return res.json({ message: 'Registration successful', uid: userRecord.uid });
+      }
   } catch (error) {
-    console.error('Error in registration:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
+      console.error('Error in registration:', error);
+      return res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
+
+async function updateUserAndReRegister(uid, email, password) {
+  try {
+      // Check if user already has a nickname
+      const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).get();
+      if (userDoc.exists) {
+          const userData = userDoc.data();
+          if (userData && userData.nickname) {
+              // User already registered with a nickname, throw error
+              throw new Error('User already registered with a nickname');
+          }
+      }
+
+      // Delete existing user document
+      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).delete();
+
+      // Re-register the user with the same UID
+      const hashedPassword = await bcrypt.hash(password, 15);
+      await admin.auth().updateUser(uid, {
+          password: hashedPassword
+      });
+
+      // Update user details in Firestore
+      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set({
+          email,
+          password: hashedPassword
+      });
+
+      // Return success message
+      return { message: 'User details updated and re-registered successfully', uid };
+  } catch (error) {
+      // Handle specific error case: User already registered with a nickname
+      if (error.message === 'User already registered with a nickname') {
+          throw error;
+      }
+      // Handle other errors
+      throw new Error('Error updating user details and re-registering');
+  }
+}
+
+
+
+
+
+
+    
+    
+//     // User already exists
+//     // Check if user has a nickname
+//     const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).get();
+//     if (userDoc.exists) {
+//       const userData = userDoc.data();
+//       if (!userData || !userData.nickname) {
+//         // Delete existing user details
+//         await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).delete();
+//         // Re-register the user with the same UID
+//         const hashedPassword = await bcrypt.hash(password, 15);
+//         await admin.auth().updateUser(existingUserRecord.uid, {
+//           password: hashedPassword,
+//         });
+//         // Update user details in Firestore
+//         const newUserDetails = {
+//           email,
+//           password: hashedPassword
+//         };
+//         await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).set(newUserDetails);
+//         // Respond with success message and user UID
+//         return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
+//       }
+//       // User already registered with a nickname, return error
+//       return res.status(400).json({ message: 'User already registered' });
+//     } else {
+//       // User document does not exist in Firestore, register the user
+//       const hashedPassword = await bcrypt.hash(password, 15);
+//       const userRecord = await admin.auth().createUser({
+//         email,
+//         password: hashedPassword,
+//       });
+//       // Store user details in Firestore
+//       const userData = {
+//         email,
+//         password: hashedPassword
+//       };
+//       await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set(userData);
+//       // Respond with a success message and user UID
+//       return res.json({ message: 'Registration successful', uid: userRecord.uid });
+//     }
+    
+//   } catch (error) {
+//     console.error('Error in registration:', error);
+//     res.status(500).json({ message: 'Internal Server Error' });
+//   }
+// }
+// );
+
+
+
+
+
+
 
 app.post('/userdetails', async (req, res) => {
   try {
@@ -427,8 +544,9 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
     await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
     // Get the URL of the uploaded image
-    const imageUrl = `https://storage.googleapis.com/${storageRef.bucket.name}/${imageFilename}`;
-
+    const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
+      imageFilename
+    )}?alt=media`;
     // Get the current date
     const currentDate = new Date();
 
@@ -483,6 +601,27 @@ app.get('/get-unapproved-posts', async (req, res) => {
   }
 });
 
+app.get('/get-posts', async (req, res) => {
+  try {
+    // Reference to the "posts" document in the "users" collection
+    const postsDocRef = admin.firestore().collection('users').doc('posts');
+
+    // Retrieve the current posts data
+    const postsDoc = await postsDocRef.get();
+
+    if (postsDoc.exists) {
+      const postsData = postsDoc.data();
+      // Sort posts by date in descending order
+      const sortedPosts = postsData.posts.sort((a, b) => b.date - a.date);
+      res.json({ posts: sortedPosts });
+    } else {
+      res.status(404).json({ message: 'No posts found' });
+    }
+  } catch (error) {
+    console.error('Error in get-posts route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 // Function to check if a goal exists for the current date
 const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
@@ -564,9 +703,6 @@ app.post('/create-personal-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-
-
 app.get('/get-daily-goal', async (req, res) => {
   try {
     const { uid } = req.query;
@@ -661,6 +797,41 @@ app.post('/create-learning-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.post('/add-rating', async (req, res) => {
+  try {
+    const { uid, techniqueId, rating } = req.body;
+
+    // Get the current date
+    const currentDate = new Date();
+
+    // Create a reference to the document based on user's UID and the specified technique ID
+    const ratingRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
+                            .collection('coupingTechniques').doc(techniqueId);
+
+    // Get the existing data of the specified technique
+    const techniqueDoc = await ratingRef.get();
+    let techniqueData = techniqueDoc.exists ? techniqueDoc.data() : {};
+
+    // Get the current index for storing the rating
+    const currentIndex = Object.keys(techniqueData).length;
+
+    // Add the rating to the technique document with the current index
+    techniqueData[currentIndex] = { rating, date: currentDate };
+
+    // Update the document with the new rating
+    await ratingRef.set(techniqueData, { merge: true });
+
+    res.json({ message: 'Rating added successfully', ratingId: currentIndex });
+  } catch (error) {
+    console.error('Error in add-rating route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+
+
 
 
 
