@@ -8,7 +8,11 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const upload = multer();
-const port = process.env.PORT || 3000;
+
+// const port = process.env.PORT || 3001;
+const port = 3001;
+const cors = require('cors'); 
+app.use(cors());
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
@@ -1166,36 +1170,30 @@ app.post('/bookAppointment', async (req, res) => {
     const { uid, date, timeSlot, puid } = req.body;
 
     // Reference to the 'bookings' subcollection for the specified 'puid'
-    const bookingsRef = admin.firestore().collection('appointments').doc("booked").collection('bookings');
+    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
 
-    // Check if there is an existing appointment for the specified time slot and puid
-    const existingAppointmentQuery = await bookingsRef
-      .where('timeSlot', '==', timeSlot)
-      .where('puid', '==', puid)
-      .get();
+    // Get the existing document data
+    const existingData = (await pendingAppointmentsRef.get()).data() || { bookings: [] };
 
-    if (!existingAppointmentQuery.empty) {
+    // Check if there is an existing appointment for the specified time slot
+    const existingAppointment = existingData.bookings.find(appointment => appointment.timeSlot === timeSlot);
+
+    if (existingAppointment) {
       // Appointment for the same time slot and puid already exists
       return res.status(400).json({ message: 'Appointment for the same time slot and doctor already exists.' });
     }
 
-    // Reference a new document in the 'bookings' collection (Firestore will generate a unique ID)
-    const appointmentRef = bookingsRef.doc();
-
-    // Get the generated ID from the document reference
-    const appointmentId = appointmentRef.id;
-
-    // Set data for the specific document, including the appointment ID
-    await appointmentRef.set({
-      appointmentId: appointmentId,
+    // Add the new booking to the array
+    existingData.bookings.push({
       uid: uid,
       date: date,
       timeSlot: timeSlot,
-      puid: puid,
-      status: "pending"
     });
 
-    res.json({ message: 'Appointment booked successfully', appointmentId: appointmentId });
+    // Update the document with the new array of bookings
+    await pendingAppointmentsRef.set(existingData);
+
+    res.json({ message: 'Appointment booked successfully' });
   } catch (error) {
     console.error('Error booking appointment:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -1204,60 +1202,84 @@ app.post('/bookAppointment', async (req, res) => {
 
 
 
-
 app.post('/updateAppointmentStatus', async (req, res) => {
   try {
-    const { appointmentId, status } = req.body;
+    const { uid, puid, status } = req.body;
 
-    // Check if the appointmentId and status are provided
-    if (!appointmentId || !status) {
-      return res.status(400).json({ message: 'Invalid request. Missing appointmentId or status.' });
+    // Check if the required parameters are provided
+    if (!uid || !puid || !status) {
+      return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or status.' });
     }
 
-    // Update the status of the existing appointment document in Firestore
-    const appointmentRef = admin.firestore().collection('appointments').doc("booked").collection('bookings').doc(appointmentId);
-    
-    // Check if the appointment exists
-    const appointmentSnapshot = await appointmentRef.get();
-    if (!appointmentSnapshot.exists) {
-      return res.status(404).json({ message: 'Appointment not found' });
+    // Reference to the 'pending' subcollection for the specified 'puid'
+    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
+
+    // Get the existing document data from the 'pending' collection
+    const pendingAppointmentsData = (await pendingAppointmentsRef.get()).data();
+
+    // Check if the appointment exists in the 'pending' collection
+    if (!pendingAppointmentsData) {
+      return res.status(404).json({ message: 'Pending appointments not found' });
     }
 
-    // Update the status field
-    await appointmentRef.update({ status: status });
+    // Find the appointment with the specified uid
+    const appointmentToUpdate = pendingAppointmentsData.bookings.find(appointment => appointment.uid === uid);
 
-    res.json({ message: 'Appointment status updated successfully', appointmentId: appointmentId });
+    if (!appointmentToUpdate) {
+      return res.status(404).json({ message: 'Appointment not found for the specified uid' });
+    }
+
+    // Remove the appointment from the 'pending' collection
+    const updatedBookings = pendingAppointmentsData.bookings.filter(appointment => appointment.uid !== uid);
+    await pendingAppointmentsRef.set({ bookings: updatedBookings });
+
+    // If the status is 'approved', move the appointment to the 'approved' collection
+    if (status === 'approved') {
+      // Reference to the 'approved' subcollection for the specified 'puid'
+      const approvedAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("approved");
+
+      // Get the existing document data from the 'approved' collection
+      const approvedAppointmentsData = (await approvedAppointmentsRef.get()).data() || { bookings: [] };
+
+      // Add the appointment to the array in the 'approved' collection
+      approvedAppointmentsData.bookings.push(appointmentToUpdate);
+
+      // Update the document in the 'approved' collection with the new array of bookings
+      await approvedAppointmentsRef.set(approvedAppointmentsData);
+    }
+
+    res.json({ message: 'Appointment status updated successfully' });
   } catch (error) {
     console.error('Error updating appointment status:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-
 app.post('/getAppointmentsByDoctor', async (req, res) => {
   try {
     const { puid } = req.body;
     if (!puid) {
       return res.status(400).json({ message: 'Invalid request. Missing puid parameter in the request body.' });
     }
-    // Query appointments in Firestore based on the specified puid
-    const appointmentsSnapshot = await admin.firestore().collection('appointments').doc("booked").collection('bookings')
-      .where('puid', '==', puid)
-      .get();
-    // Extract appointment data from the query snapshot
-    const appointments = [];
-    appointmentsSnapshot.forEach(doc => {
-      const appointmentData = doc.data();
-      appointments.push({
-        id: doc.id,
-        uid: appointmentData.uid,
-        date: appointmentData.date,
-        timeSlot: appointmentData.timeSlot,
-        status: appointmentData.status
-        
-      });
-    });
 
-    res.json({ appointments: appointments });
+    // Reference to the 'pending' subcollection for the specified 'puid'
+    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
+
+    // Reference to the 'approved' subcollection for the specified 'puid'
+    const approvedAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("approved");
+
+    // Get the existing document data for pending appointments
+    const pendingAppointmentsData = (await pendingAppointmentsRef.get()).data() || { bookings: [] };
+
+    // Get the existing document data for approved appointments
+    const approvedAppointmentsData = (await approvedAppointmentsRef.get()).data() || { bookings: [] };
+
+    const pendingAppointments = pendingAppointmentsData.bookings;
+    const approvedAppointments = approvedAppointmentsData.bookings;
+
+    res.json({
+      pendingAppointments: pendingAppointments,
+      approvedAppointments: approvedAppointments
+    });
   } catch (error) {
     console.error('Error retrieving appointments:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -1290,36 +1312,36 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
     const userData = userSnapshot.docs[0];
     const uid = userData.id;
 
-    // Check if the appointment with the same UID and PUID already exists
-    const existingAppointmentQuery = await admin.firestore()
-      .collection('appointments')
-      .doc('AddedbyPsychologist')
-      .collection('Appointment')
-      .where('uid', '==', uid)
-      .where('puid', '==', puid)
-      .limit(1)
-      .get();
+    // Reference the document in the 'doctorAppointments' collection corresponding to the provided puid
+    const doctorAppointmentRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("addedbyPsych");
 
-    if (!existingAppointmentQuery.empty) {
-      // Appointment with the same UID and PUID already exists
-      return res.status(400).json({ message: 'Appointment with the same client and doctor already exists.' });
+    // Get the existing data from the document
+    const existingData = (await doctorAppointmentRef.get()).data();
+
+    // Check if the UID already exists in the array
+    if (existingData && existingData.uids && existingData.uids.includes(uid)) {
+      return res.status(400).json({ message: 'Appointment with the same client already exists.' });
     }
 
-    // Reference a new document in the 'doctorAppointments' collection (Firestore will generate a unique ID)
-    const doctorAppointmentRef = admin.firestore().collection('appointments').doc('AddedbyPsychologist').collection('Appointment').doc();
+    // If the document already exists, update the array of UIDs
+    if (existingData) {
+      const updatedUids = [...(existingData.uids || []), uid];
 
-    // Get the generated ID from the document reference
-    const appointmentApprovedId = doctorAppointmentRef.id;
+      await doctorAppointmentRef.update({
+        uids: updatedUids,
+       
+      });
 
-    // Set data for the specific document, including the appointment ID, doctor's user id, client's user id, and any other relevant information
+      return res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
+    }
+
+    // If the document does not exist, create a new document with the array of UIDs
     await doctorAppointmentRef.set({
-      appointmentApprovedId: appointmentApprovedId,
-      puid: puid,
-      uid: uid, // Use the retrieved UID
-      status: "Approved"
+      uids: [uid],
+     
     });
 
-    res.json({ message: 'Appointment added to the doctor list successfully', appointmentId: appointmentApprovedId });
+    res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
   } catch (error) {
     console.error('Error adding appointment to the doctor list:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -1327,10 +1349,12 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
 });
 
 
+
+
 app.post("/assignTasksToClient", async (req, res) => {
   try {
     const { uid, puid, tasks } = req.body;
-
+    
     // Check if all required parameters are provided
     if (!uid || !puid || !tasks || !Array.isArray(tasks)) {
       return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or tasks parameter in the request body.' });
@@ -1367,6 +1391,23 @@ app.post('/createChatConversation', async (req, res) => {
       return res.status(400).json({ message: 'Invalid request. Missing uid or puid parameter in the request body.' });
     }
 
+    // Check if a conversation already exists between uid and puid
+    const existingConversationQuery = await admin.firestore()
+      .collection('appointments')
+      .doc('Conversations')
+      .collection('chatConversations')
+      .where('uid', '==', uid)
+      .where('puid', '==', puid)
+      .limit(1)
+      .get();
+
+    if (!existingConversationQuery.empty) {
+      // Conversation already exists, return the existing conversation ID
+      const existingConversationData = existingConversationQuery.docs[0].data();
+      const existingConversationId = existingConversationData.conversationId;
+      return res.json({ message: 'Chat conversation already exists', conversationId: existingConversationId });
+    }
+
     // Reference a new document in the 'chatConversations' collection (Firestore will generate a unique ID)
     const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc();
 
@@ -1387,6 +1428,7 @@ app.post('/createChatConversation', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 // Send message route
 app.post('/sendMessage', async (req, res) => {
   try {
@@ -1460,7 +1502,7 @@ app.get('/getMessages/:conversationId', async (req, res) => {
   }
 });
 
-app.post('/generateAccesstoken' = async(req, res) => {
+app.post('/generateAccesstoken' , async(req, res) => {
   // For demonstration purposes, let's assume you receive user data in the request body
   const user = req.body;
 
@@ -1532,11 +1574,16 @@ app.post(generateRefreshtoken = (req, res) => {
     return refreshToken;
   }
   
-
-
-
-
-
+// chat soket.io routes
+// const http = require('http');
+// const socketIO = require('socket.io');
+// const server = http.createServer(app);
+// const io = socketIO(server, {
+//   cors: {
+//     origin: 'http://localhost:3000',
+//     methods: ['GET', 'POST'],
+//   },
+// });
 
 
 
