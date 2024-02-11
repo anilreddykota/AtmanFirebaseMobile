@@ -904,7 +904,7 @@ app.post('/registerPsychologistNickname', async (req, res) => {
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid });
+    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid }); 
   } catch (error) {
     console.error('Error in nickname registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -918,10 +918,9 @@ app.post('/psychologistLogin', async (req, res) => {
 
     // Retrieve psychologist by email using the admin SDK
     const psychologistRecord = await admin.auth().getUserByEmail(email);
-    console.log("psychologist exists", psychologistRecord);
     if (psychologistRecord) {
       // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
-      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.puid);
+      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.uid);
       const psychologistDoc = await psychologistDocRef.get();
       
       if (psychologistDoc.exists) {
