@@ -801,7 +801,7 @@ async function authenticatePsychologist(req, res, next) {
     const decodedToken = await admin.auth().verifyIdToken(token);
     
     // Add the user UID to the request object for further processing
-    req.psychologistid = decodedToken.uid;
+    req.psychologistid = decodedToken.puid;
 
     next();
   } catch (error) {
@@ -841,7 +841,7 @@ app.post('/registerPsychologist', async (req, res) => {
     await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(psychologistUid).set(psychologistData);
 
     // Respond with a success message and user UID
-    res.json({ message: 'Registration successful', uid: psychologistUid });
+    res.json({ message: 'Registration successful', puid: psychologistUid });
   } catch (error) {
     console.error('Error in registration:', error);
 
@@ -856,16 +856,16 @@ app.post('/registerPsychologist', async (req, res) => {
 
 app.post('/psychologistdetails', async (req, res) => {
   try {
-    const { uid, name, gender, age, languages, area_of_expertise} = req.body;
+    const { puid, name, gender, age, languages, area_of_expertise} = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
       {
         name, gender, age, languages, area_of_expertise
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
 
-    res.json({ message: 'Psychologist details saved successfully', uid:uid });
+    res.json({ message: 'Psychologist details saved successfully', puid:puid });
   } catch (error) {
     console.error('Error in psychologist details registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -874,15 +874,15 @@ app.post('/psychologistdetails', async (req, res) => {
 
 app.post('/registerPsychologistPhoneNumber', async (req, res) => {
   try {
-    const { uid, phonenumber } = req.body;
+    const { puid, phonenumber } = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
       {
         phonenumber,
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'phone number saved successfully', uid: uid });
+    res.json({ message: 'phone number saved successfully', puid: puid });
   } catch (error) {
     console.error('Error in phone number registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -891,20 +891,20 @@ app.post('/registerPsychologistPhoneNumber', async (req, res) => {
 
 app.post('/registerPsychologistNickname', async (req, res) => {
   try {
-    const { uid, nickname } = req.body;
+    const { puid, nickname } = req.body;
     // Check if the nickname is already taken
     const nicknameExists = await isPsychologistNicknameTaken(nickname);
     if (nicknameExists) {
       return res.status(400).json({ message: 'Nickname is already taken' });
     }
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
       {
         nickname,
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'Psychologist nickname added registered successfully', uid: uid });
+    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid });
   } catch (error) {
     console.error('Error in nickname registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -921,7 +921,7 @@ app.post('/psychologistLogin', async (req, res) => {
     console.log("psychologist exists", psychologistRecord);
     if (psychologistRecord) {
       // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
-      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.uid);
+      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.puid);
       const psychologistDoc = await psychologistDocRef.get();
       
       if (psychologistDoc.exists) {
@@ -942,7 +942,7 @@ app.post('/psychologistLogin', async (req, res) => {
 
         if (isPasswordValid) {
           // Generate JWT token with psychologist UID and email
-          const token = jwt.sign({ uid: psychologistRecord.uid, email: psychologistRecord.email }, 'atmanapplication', {
+          const token = jwt.sign({ puid: psychologistRecord.puid, email: psychologistRecord.email }, 'atmanapplication', {
 
           });
 
@@ -950,7 +950,7 @@ app.post('/psychologistLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistNickname},
+            userData: { email: psychologistRecord.email, puid: psychologistRecord.puid, nickname: psychologistNickname},
           });
         } else {
           res.status(401).json({ message: 'Invalid email or password' });
