@@ -972,7 +972,7 @@ async function authenticatePsychologist(req, res, next) {
     const decodedToken = await admin.auth().verifyIdToken(token);
     
     // Add the user UID to the request object for further processing
-    req.psychologistid = decodedToken.uid;
+    req.psychologistid = decodedToken.puid;
 
     next();
   } catch (error) {
@@ -1012,7 +1012,7 @@ app.post('/registerPsychologist', async (req, res) => {
     await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(psychologistUid).set(psychologistData);
 
     // Respond with a success message and user UID
-    res.json({ message: 'Registration successful', uid: psychologistUid });
+    res.json({ message: 'Registration successful', puid: psychologistUid });
   } catch (error) {
     console.error('Error in registration:', error);
 
@@ -1027,16 +1027,16 @@ app.post('/registerPsychologist', async (req, res) => {
 
 app.post('/psychologistdetails', async (req, res) => {
   try {
-    const { uid, name, gender, age, languages, area_of_expertise} = req.body;
+    const { puid, name, gender, age, languages, area_of_expertise} = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
       {
         name, gender, age, languages, area_of_expertise
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
 
-    res.json({ message: 'Psychologist details saved successfully', uid:uid });
+    res.json({ message: 'Psychologist details saved successfully', puid:puid });
   } catch (error) {
     console.error('Error in psychologist details registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1045,15 +1045,15 @@ app.post('/psychologistdetails', async (req, res) => {
 
 app.post('/registerPsychologistPhoneNumber', async (req, res) => {
   try {
-    const { uid, phonenumber } = req.body;
+    const { puid, phonenumber } = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
       {
         phonenumber,
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'phone number saved successfully', uid: uid });
+    res.json({ message: 'phone number saved successfully', puid: puid });
   } catch (error) {
     console.error('Error in phone number registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1062,20 +1062,20 @@ app.post('/registerPsychologistPhoneNumber', async (req, res) => {
 
 app.post('/registerPsychologistNickname', async (req, res) => {
   try {
-    const { uid, nickname } = req.body;
+    const { puid, nickname } = req.body;
     // Check if the nickname is already taken
     const nicknameExists = await isPsychologistNicknameTaken(nickname);
     if (nicknameExists) {
       return res.status(400).json({ message: 'Nickname is already taken' });
     }
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
       {
         nickname,
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'Psychologist nickname added registered successfully', uid: uid });
+    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid }); 
   } catch (error) {
     console.error('Error in nickname registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1105,7 +1105,7 @@ app.post('/psychologistLogin', async (req, res) => {
 
         if (isPasswordValid) {
           // Generate JWT token with psychologist UID and email
-          const token = jwt.sign({ uid: psychologistRecord.uid, email: psychologistRecord.email }, 'atmanapplication', {
+          const token = jwt.sign({ puid: psychologistRecord.puid, email: psychologistRecord.email }, 'atmanapplication', {
 
           });
 
@@ -1113,7 +1113,8 @@ app.post('/psychologistLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
+               userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
+
           });
         } else {
           res.status(401).json({ message: 'Invalid email or password' });
@@ -1336,7 +1337,7 @@ app.post("/assignTasksToClient", async (req, res) => {
     }
 
     // Reference a new document in the 'tasksToClients' collection (Firestore will generate a unique ID)
-    const tasksToClientRef = admin.firestore().collection('tasksToClients').doc();
+    const tasksToClientRef = admin.firestore().collection('appointments').doc('Conversations').collection('tasksToClients').doc();
 
     // Get the generated ID from the document reference
     const taskId = tasksToClientRef.id;
@@ -1367,7 +1368,7 @@ app.post('/createChatConversation', async (req, res) => {
     }
 
     // Reference a new document in the 'chatConversations' collection (Firestore will generate a unique ID)
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc();
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc();
 
     // Get the generated ID from the document reference
     const conversationId = chatConversationRef.id;
@@ -1397,7 +1398,7 @@ app.post('/sendMessage', async (req, res) => {
     }
 
     // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc(conversationId);
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
 
     // Get the current conversation data
     const chatConversationDoc = await chatConversationRef.get();
@@ -1412,7 +1413,7 @@ app.post('/sendMessage', async (req, res) => {
    
 
     // Get the current timestamp
-    const timestamp = Date.now();
+    const timestamp = new Date().toISOString();
 
     // Update the messages array in the conversation document
     await chatConversationRef.update({
@@ -1441,7 +1442,7 @@ app.get('/getMessages/:conversationId', async (req, res) => {
     }
 
     // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc(conversationId);
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
 
     // Get the chat conversation document
     const chatConversationDoc = await chatConversationRef.get();
