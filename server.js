@@ -1089,7 +1089,6 @@ app.post('/psychologistLogin', async (req, res) => {
 
     // Retrieve psychologist by email using the admin SDK
     const psychologistRecord = await admin.auth().getUserByEmail(email);
-    console.log("psychologist exists", psychologistRecord);
     if (psychologistRecord) {
       // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
       const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.uid);
@@ -1097,14 +1096,7 @@ app.post('/psychologistLogin', async (req, res) => {
       
       if (psychologistDoc.exists) {
         // Check if the psychologist has a nickname
-        const psychologistNickname = psychologistDoc.data().nickname;
-
-        if (!psychologistNickname) {
-          // Remove psychologist details if registration is incomplete
-          await psychologistDocRef.delete();
-          return res.status(401).json({ message: 'Incomplete Registration - User details removed' });
-        }
-
+        
         // Retrieve hashed password from Firestore
         const storedHashedPassword = psychologistDoc.data().password;
 
@@ -1121,7 +1113,7 @@ app.post('/psychologistLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistNickname},
+            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
           });
         } else {
           res.status(401).json({ message: 'Invalid email or password' });
