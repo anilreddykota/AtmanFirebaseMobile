@@ -1249,7 +1249,7 @@ app.post('/sendMessage', async (req, res) => {
    
 
     // Get the current timestamp
-    const timestamp = Date.now();
+    const timestamp = new Date().toISOString();
 
     // Update the messages array in the conversation document
     await chatConversationRef.update({
