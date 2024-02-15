@@ -987,7 +987,7 @@ async function authenticatePsychologist(req, res, next) {
 
 //checking Name of psychologists
 async function isPsychologistNicknameTaken(nickname) {
-  const snapshot = await admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").where('nickname', '==', nickname).get();
+  const snapshot = await admin.firestore().collection('psychologists').where('nickname', '==', nickname).get();
   return !snapshot.empty;
 }
 
@@ -1013,7 +1013,7 @@ app.post('/registerPsychologist', async (req, res) => {
       email,
       password:hashedPassword
     };
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(psychologistUid).set(psychologistData);
+    await admin.firestore().collection('psychologists').doc(psychologistUid).set(psychologistData);
 
     // Respond with a success message and user UID
     res.json({ message: 'Registration successful', puid: psychologistUid });
@@ -1033,7 +1033,7 @@ app.post('/psychologistdetails', async (req, res) => {
   try {
     const { puid, name, gender, age, languages, area_of_expertise} = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
+    await admin.firestore().collection('psychologists').doc(puid).set(
       {
         name, gender, age, languages, area_of_expertise
       },
@@ -1051,7 +1051,7 @@ app.post('/registerPsychologistPhoneNumber', async (req, res) => {
   try {
     const { puid, phonenumber } = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
+    await admin.firestore().collection('psychologists').doc(puid).set(
       {
         phonenumber,
       },
@@ -1073,7 +1073,7 @@ app.post('/registerPsychologistNickname', async (req, res) => {
       return res.status(400).json({ message: 'Nickname is already taken' });
     }
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(puid).set(
+    await admin.firestore().collection('psychologists').doc(puid).set(
       {
         nickname,
       },
@@ -1095,7 +1095,7 @@ app.post('/psychologistLogin', async (req, res) => {
     const psychologistRecord = await admin.auth().getUserByEmail(email);
     if (psychologistRecord) {
       // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
-      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.uid);
+      const psychologistDocRef = admin.firestore().collection('psychologists').doc(psychologistRecord.uid);
       const psychologistDoc = await psychologistDocRef.get();
       
       if (psychologistDoc.exists) {
@@ -1574,20 +1574,67 @@ app.post(generateRefreshtoken = (req, res) => {
     return refreshToken;
   }
   
-// chat soket.io routes
+  app.get('/api/messages', async (req, res) => {
+    try {
+      const messagesSnapshot = await admin.firestore().collection('messages').orderBy('timestamp').get();
+      const messagesData = messagesSnapshot.docs.map((doc) => doc.data());
+      res.json(messagesData);
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+// // chat soket.io routes
+// admin.firestore().settings({ ignoreUndefinedProperties: true });
 // const http = require('http');
-// const socketIO = require('socket.io');
 // const server = http.createServer(app);
-// const io = socketIO(server, {
+// const io = require("socket.io")(server, {
+//   allowRequest: (req, callback) => {
+//     // Assuming you want to allow all requests for simplicity
+//     // You might want to implement your own logic here
+//     callback(null, true);
+//   },
 //   cors: {
 //     origin: 'http://localhost:3000',
 //     methods: ['GET', 'POST'],
-//   },
+//   }
+// });
+// io.on('connection', (socket) => {
+//   console.log('A user connected');
+
+//   socket.on('join', (uid) => {
+//     io.emit('message', { uid, text: 'joined the chat' });
+
+//     // You can also save the join event to Firestore if needed
+//     admin.firestore().collection('messages').add({
+//       uid,
+//       text: 'joined the chat',
+//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
+//     });
+//   });
+
+//   socket.on('message', (data) => {
+//     io.emit('message', data);
+
+//     // Save the message to Firestore
+//     admin.firestore().collection('messages').add({
+//       uid: data.uid,
+//       text: data.text,
+//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
+//     });
+//   });
+
+//   socket.on('disconnect', () => {
+//     console.log('User disconnected');
+//   });
 // });
 
 
+// // Start the Express server
+// server.listen(3002, () => {
+//   console.log(`Server is running on port ${3002}`);
+// });
 
-// Start the Express server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
