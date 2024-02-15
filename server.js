@@ -1502,77 +1502,83 @@ app.get('/getMessages/:conversationId', async (req, res) => {
   }
 });
 
-app.post('/generateAccesstoken' , async(req, res) => {
+//here<<<<<<< main
+//hereapp.post('/generateAccesstoken' , async(req, res) => {
   // For demonstration purposes, let's assume you receive user data in the request body
-  const user = req.body;
+//here const user = req.body;
+//here=======
+// app.post('/generateAccesstoken' = async(req, res) => {
+//   // For demonstration purposes, let's assume you receive user data in the request body
+//   const user = req.body;
+//here>>>>>>> main
 
-  try {
-      const accessToken = generateAccessToken(user);
-      res.status(200).json({ accessToken: accessToken });
-  } catch (error) {
-      console.error('Error generating access token:', error.message);
-      res.status(500).json({ error: 'Failed to generate access token' });
-  }
-});
+//   try {
+//       const accessToken = generateAccessToken(user);
+//       res.status(200).json({ accessToken: accessToken });
+//   } catch (error) {
+//       console.error('Error generating access token:', error.message);
+//       res.status(500).json({ error: 'Failed to generate access token' });
+//   }
+// });
 
-// Function to generate an access token
-function generateAccessToken(user) {
-  // Define payload for the token (can include any user-related data)
-  const payload = {
-      userId: user.id,
-      email: user.email,
-      // You can include additional data if needed
-  };
+// // Function to generate an access token
+// function generateAccessToken(user) {
+//   // Define payload for the token (can include any user-related data)
+//   const payload = {
+//       userId: user.id,
+//       email: user.email,
+//       // You can include additional data if needed
+//   };
 
-  //Set the secret key
-  const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
+//   //Set the secret key
+//   const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
 
-  // Define options (optional)
-  const options = {
-      expiresIn: '15m' // Token expires in 15 minutes
-  };
+//   // Define options (optional)
+//   const options = {
+//       expiresIn: '15m' // Token expires in 15 minutes
+//   };
 
-  // Generate the access token
-  const accessToken = jwt.sign(payload, accessTokenSecret, options);
+//   // Generate the access token
+//   const accessToken = jwt.sign(payload, accessTokenSecret, options);
 
-  return accessToken;
-}
-app.post(generateRefreshtoken = (req, res) => {
-    // For demonstration purposes, let's assume you receive user data in the request body
-    const user = req.body;
+//   return accessToken;
+// }
+// app.post(generateRefreshtoken = (req, res) => {
+//     // For demonstration purposes, let's assume you receive user data in the request body
+//     const user = req.body;
   
-    try {
-        const refreshToken = generateRefreshToken(user);
-        res.status(200).json({ refreshToken: refreshToken });
-    } catch (error) {
-        console.error('Error generating refresh token:', error.message);
-        res.status(500).json({ error: 'Failed to generate refresh token' });
-    }
-  });
+//     try {
+//         const refreshToken = generateRefreshToken(user);
+//         res.status(200).json({ refreshToken: refreshToken });
+//     } catch (error) {
+//         console.error('Error generating refresh token:', error.message);
+//         res.status(500).json({ error: 'Failed to generate refresh token' });
+//     }
+//   });
   
-  // Function to generate refresh token
-  function generateRefreshToken(user) {
-    // Define payload for the token (can include any user-related data)
-    const payload = {
-        userId: user.id,
-        email: user.email,
-        // You can include additional data if needed
-    };
+//   // Function to generate refresh token
+//   function generateRefreshToken(user) {
+//     // Define payload for the token (can include any user-related data)
+//     const payload = {
+//         userId: user.id,
+//         email: user.email,
+//         // You can include additional data if needed
+//     };
   
-    //Set the secret key
-    const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET;
+//     //Set the secret key
+//     const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET;
   
   
-    // Define options (optional)
-    const options = {
-        expiresIn: '7d' // Token expires in 7 days
-    };
+//     // Define options (optional)
+//     const options = {
+//         expiresIn: '7d' // Token expires in 7 days
+//     };
   
-    // Generate the refresh token
-    const refreshToken = jwt.sign(payload, refreshTokenSecret, options);
+//     // Generate the refresh token
+//     const refreshToken = jwt.sign(payload, refreshTokenSecret, options);
   
-    return refreshToken;
-  }
+//     return refreshToken;
+//   }
   
   app.get('/api/messages', async (req, res) => {
     try {
