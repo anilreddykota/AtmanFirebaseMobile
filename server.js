@@ -74,7 +74,7 @@ app.post('/registerUser', async (req, res) => {
           if (!userData || !userData.nickname) {
               // User doesn't have a nickname, update details and re-register
               await updateUserAndReRegister(existingUserRecord.uid, email, password);
-              return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
+              return res.json({ message: 'registration successful', uid: existingUserRecord.uid });
           } else {
               // User already registered with a nickname
               return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
