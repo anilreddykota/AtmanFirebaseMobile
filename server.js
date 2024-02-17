@@ -1200,6 +1200,34 @@ app.post('/bookAppointment', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+app.post('/store-reminder', async (req, res) => {
+  try {
+    const { uid, time, date, plan } = req.body;
+
+    // Create a reference to the reminders collection for the specific user and date
+    const remindersCollectionRef = admin.firestore().collection('psychologists').doc(uid).collection('remainders').doc(date);
+
+    // Check if the reminder already exists for the date
+    const snapshot = await remindersCollectionRef.get();
+
+    if (snapshot.exists) {
+      // If reminders exist for the date, append the new reminder to the existing ones
+      await remindersCollectionRef.update({
+        reminders: admin.firestore.FieldValue.arrayUnion({ time, plan })
+      });
+    } else {
+      // If no reminders exist for the date, create a new document and add the reminder
+      await remindersCollectionRef.set({
+        reminders: [{ time, plan }]
+      });
+    }
+
+    res.json({ message: 'Reminder stored successfully' });
+  } catch (error) {
+    console.error('Error storing reminder:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 
 
