@@ -8,7 +8,11 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const upload = multer();
-const port = process.env.PORT || 3000;
+
+// const port = process.env.PORT || 3001;
+const port = 3001;
+const cors = require('cors'); 
+app.use(cors());
 //const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
@@ -972,7 +976,7 @@ async function authenticatePsychologist(req, res, next) {
     const decodedToken = await admin.auth().verifyIdToken(token);
     
     // Add the user UID to the request object for further processing
-    req.psychologistid = decodedToken.uid;
+    req.psychologistid = decodedToken.puid;
 
     next();
   } catch (error) {
@@ -983,7 +987,7 @@ async function authenticatePsychologist(req, res, next) {
 
 //checking Name of psychologists
 async function isPsychologistNicknameTaken(nickname) {
-  const snapshot = await admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").where('nickname', '==', nickname).get();
+  const snapshot = await admin.firestore().collection('psychologists').where('nickname', '==', nickname).get();
   return !snapshot.empty;
 }
 
@@ -1009,10 +1013,10 @@ app.post('/registerPsychologist', async (req, res) => {
       email,
       password:hashedPassword
     };
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(psychologistUid).set(psychologistData);
+    await admin.firestore().collection('psychologists').doc(psychologistUid).set(psychologistData);
 
     // Respond with a success message and user UID
-    res.json({ message: 'Registration successful', uid: psychologistUid });
+    res.json({ message: 'Registration successful', puid: psychologistUid });
   } catch (error) {
     console.error('Error in registration:', error);
 
@@ -1027,16 +1031,16 @@ app.post('/registerPsychologist', async (req, res) => {
 
 app.post('/psychologistdetails', async (req, res) => {
   try {
-    const { uid, name, gender, age, languages, area_of_expertise} = req.body;
+    const { puid, name, gender, age, languages, area_of_expertise} = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc(puid).set(
       {
         name, gender, age, languages, area_of_expertise
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
 
-    res.json({ message: 'Psychologist details saved successfully', uid:uid });
+    res.json({ message: 'Psychologist details saved successfully', puid:puid });
   } catch (error) {
     console.error('Error in psychologist details registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1045,15 +1049,15 @@ app.post('/psychologistdetails', async (req, res) => {
 
 app.post('/registerPsychologistPhoneNumber', async (req, res) => {
   try {
-    const { uid, phonenumber } = req.body;
+    const { puid, phonenumber } = req.body;
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc(puid).set(
       {
         phonenumber,
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'phone number saved successfully', uid: uid });
+    res.json({ message: 'phone number saved successfully', puid: puid });
   } catch (error) {
     console.error('Error in phone number registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1062,20 +1066,20 @@ app.post('/registerPsychologistPhoneNumber', async (req, res) => {
 
 app.post('/registerPsychologistNickname', async (req, res) => {
   try {
-    const { uid, nickname } = req.body;
+    const { puid, nickname } = req.body;
     // Check if the nickname is already taken
     const nicknameExists = await isPsychologistNicknameTaken(nickname);
     if (nicknameExists) {
       return res.status(400).json({ message: 'Nickname is already taken' });
     }
     // Update user data in Firestore (add or update the nickname)
-    await admin.firestore().collection('psychologists').doc('psychologistDetails').collection('details').doc(uid).set(
+    await admin.firestore().collection('psychologists').doc(puid).set(
       {
         nickname,
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-    res.json({ message: 'Psychologist nickname added registered successfully', uid: uid });
+    res.json({ message: 'Psychologist nickname added registered successfully', puid: puid }); 
   } catch (error) {
     console.error('Error in nickname registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -1091,7 +1095,7 @@ app.post('/psychologistLogin', async (req, res) => {
     const psychologistRecord = await admin.auth().getUserByEmail(email);
     if (psychologistRecord) {
       // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
-      const psychologistDocRef = admin.firestore().collection('psychologists').doc("psychologistDetails").collection("details").doc(psychologistRecord.uid);
+      const psychologistDocRef = admin.firestore().collection('psychologists').doc(psychologistRecord.uid);
       const psychologistDoc = await psychologistDocRef.get();
       
       if (psychologistDoc.exists) {
@@ -1105,7 +1109,7 @@ app.post('/psychologistLogin', async (req, res) => {
 
         if (isPasswordValid) {
           // Generate JWT token with psychologist UID and email
-          const token = jwt.sign({ uid: psychologistRecord.uid, email: psychologistRecord.email }, 'atmanapplication', {
+          const token = jwt.sign({ puid: psychologistRecord.puid, email: psychologistRecord.email }, 'atmanapplication', {
 
           });
 
@@ -1113,7 +1117,8 @@ app.post('/psychologistLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
+               userData: { email: psychologistRecord.email, uid: psychologistRecord.uid },
+
           });
         } else {
           res.status(401).json({ message: 'Invalid email or password' });
@@ -1165,36 +1170,30 @@ app.post('/bookAppointment', async (req, res) => {
     const { uid, date, timeSlot, puid } = req.body;
 
     // Reference to the 'bookings' subcollection for the specified 'puid'
-    const bookingsRef = admin.firestore().collection('appointments').doc("booked").collection('bookings');
+    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
 
-    // Check if there is an existing appointment for the specified time slot and puid
-    const existingAppointmentQuery = await bookingsRef
-      .where('timeSlot', '==', timeSlot)
-      .where('puid', '==', puid)
-      .get();
+    // Get the existing document data
+    const existingData = (await pendingAppointmentsRef.get()).data() || { bookings: [] };
 
-    if (!existingAppointmentQuery.empty) {
+    // Check if there is an existing appointment for the specified time slot
+    const existingAppointment = existingData.bookings.find(appointment => appointment.timeSlot === timeSlot);
+
+    if (existingAppointment) {
       // Appointment for the same time slot and puid already exists
       return res.status(400).json({ message: 'Appointment for the same time slot and doctor already exists.' });
     }
 
-    // Reference a new document in the 'bookings' collection (Firestore will generate a unique ID)
-    const appointmentRef = bookingsRef.doc();
-
-    // Get the generated ID from the document reference
-    const appointmentId = appointmentRef.id;
-
-    // Set data for the specific document, including the appointment ID
-    await appointmentRef.set({
-      appointmentId: appointmentId,
+    // Add the new booking to the array
+    existingData.bookings.push({
       uid: uid,
       date: date,
       timeSlot: timeSlot,
-      puid: puid,
-      status: "pending"
     });
 
-    res.json({ message: 'Appointment booked successfully', appointmentId: appointmentId });
+    // Update the document with the new array of bookings
+    await pendingAppointmentsRef.set(existingData);
+
+    res.json({ message: 'Appointment booked successfully' });
   } catch (error) {
     console.error('Error booking appointment:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -1231,60 +1230,84 @@ app.post('/store-reminder', async (req, res) => {
 
 
 
-
 app.post('/updateAppointmentStatus', async (req, res) => {
   try {
-    const { appointmentId, status } = req.body;
+    const { uid, puid, status } = req.body;
 
-    // Check if the appointmentId and status are provided
-    if (!appointmentId || !status) {
-      return res.status(400).json({ message: 'Invalid request. Missing appointmentId or status.' });
+    // Check if the required parameters are provided
+    if (!uid || !puid || !status) {
+      return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or status.' });
     }
 
-    // Update the status of the existing appointment document in Firestore
-    const appointmentRef = admin.firestore().collection('appointments').doc("booked").collection('bookings').doc(appointmentId);
-    
-    // Check if the appointment exists
-    const appointmentSnapshot = await appointmentRef.get();
-    if (!appointmentSnapshot.exists) {
-      return res.status(404).json({ message: 'Appointment not found' });
+    // Reference to the 'pending' subcollection for the specified 'puid'
+    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
+
+    // Get the existing document data from the 'pending' collection
+    const pendingAppointmentsData = (await pendingAppointmentsRef.get()).data();
+
+    // Check if the appointment exists in the 'pending' collection
+    if (!pendingAppointmentsData) {
+      return res.status(404).json({ message: 'Pending appointments not found' });
     }
 
-    // Update the status field
-    await appointmentRef.update({ status: status });
+    // Find the appointment with the specified uid
+    const appointmentToUpdate = pendingAppointmentsData.bookings.find(appointment => appointment.uid === uid);
 
-    res.json({ message: 'Appointment status updated successfully', appointmentId: appointmentId });
+    if (!appointmentToUpdate) {
+      return res.status(404).json({ message: 'Appointment not found for the specified uid' });
+    }
+
+    // Remove the appointment from the 'pending' collection
+    const updatedBookings = pendingAppointmentsData.bookings.filter(appointment => appointment.uid !== uid);
+    await pendingAppointmentsRef.set({ bookings: updatedBookings });
+
+    // If the status is 'approved', move the appointment to the 'approved' collection
+    if (status === 'approved') {
+      // Reference to the 'approved' subcollection for the specified 'puid'
+      const approvedAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("approved");
+
+      // Get the existing document data from the 'approved' collection
+      const approvedAppointmentsData = (await approvedAppointmentsRef.get()).data() || { bookings: [] };
+
+      // Add the appointment to the array in the 'approved' collection
+      approvedAppointmentsData.bookings.push(appointmentToUpdate);
+
+      // Update the document in the 'approved' collection with the new array of bookings
+      await approvedAppointmentsRef.set(approvedAppointmentsData);
+    }
+
+    res.json({ message: 'Appointment status updated successfully' });
   } catch (error) {
     console.error('Error updating appointment status:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-
 app.post('/getAppointmentsByDoctor', async (req, res) => {
   try {
     const { puid } = req.body;
     if (!puid) {
       return res.status(400).json({ message: 'Invalid request. Missing puid parameter in the request body.' });
     }
-    // Query appointments in Firestore based on the specified puid
-    const appointmentsSnapshot = await admin.firestore().collection('appointments').doc("booked").collection('bookings')
-      .where('puid', '==', puid)
-      .get();
-    // Extract appointment data from the query snapshot
-    const appointments = [];
-    appointmentsSnapshot.forEach(doc => {
-      const appointmentData = doc.data();
-      appointments.push({
-        id: doc.id,
-        uid: appointmentData.uid,
-        date: appointmentData.date,
-        timeSlot: appointmentData.timeSlot,
-        status: appointmentData.status
-        
-      });
-    });
 
-    res.json({ appointments: appointments });
+    // Reference to the 'pending' subcollection for the specified 'puid'
+    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
+
+    // Reference to the 'approved' subcollection for the specified 'puid'
+    const approvedAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("approved");
+
+    // Get the existing document data for pending appointments
+    const pendingAppointmentsData = (await pendingAppointmentsRef.get()).data() || { bookings: [] };
+
+    // Get the existing document data for approved appointments
+    const approvedAppointmentsData = (await approvedAppointmentsRef.get()).data() || { bookings: [] };
+
+    const pendingAppointments = pendingAppointmentsData.bookings;
+    const approvedAppointments = approvedAppointmentsData.bookings;
+
+    res.json({
+      pendingAppointments: pendingAppointments,
+      approvedAppointments: approvedAppointments
+    });
   } catch (error) {
     console.error('Error retrieving appointments:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -1317,36 +1340,36 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
     const userData = userSnapshot.docs[0];
     const uid = userData.id;
 
-    // Check if the appointment with the same UID and PUID already exists
-    const existingAppointmentQuery = await admin.firestore()
-      .collection('appointments')
-      .doc('AddedbyPsychologist')
-      .collection('Appointment')
-      .where('uid', '==', uid)
-      .where('puid', '==', puid)
-      .limit(1)
-      .get();
+    // Reference the document in the 'doctorAppointments' collection corresponding to the provided puid
+    const doctorAppointmentRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("addedbyPsych");
 
-    if (!existingAppointmentQuery.empty) {
-      // Appointment with the same UID and PUID already exists
-      return res.status(400).json({ message: 'Appointment with the same client and doctor already exists.' });
+    // Get the existing data from the document
+    const existingData = (await doctorAppointmentRef.get()).data();
+
+    // Check if the UID already exists in the array
+    if (existingData && existingData.uids && existingData.uids.includes(uid)) {
+      return res.status(400).json({ message: 'Appointment with the same client already exists.' });
     }
 
-    // Reference a new document in the 'doctorAppointments' collection (Firestore will generate a unique ID)
-    const doctorAppointmentRef = admin.firestore().collection('appointments').doc('AddedbyPsychologist').collection('Appointment').doc();
+    // If the document already exists, update the array of UIDs
+    if (existingData) {
+      const updatedUids = [...(existingData.uids || []), uid];
 
-    // Get the generated ID from the document reference
-    const appointmentApprovedId = doctorAppointmentRef.id;
+      await doctorAppointmentRef.update({
+        uids: updatedUids,
+       
+      });
 
-    // Set data for the specific document, including the appointment ID, doctor's user id, client's user id, and any other relevant information
+      return res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
+    }
+
+    // If the document does not exist, create a new document with the array of UIDs
     await doctorAppointmentRef.set({
-      appointmentApprovedId: appointmentApprovedId,
-      puid: puid,
-      uid: uid, // Use the retrieved UID
-      status: "Approved"
+      uids: [uid],
+     
     });
 
-    res.json({ message: 'Appointment added to the doctor list successfully', appointmentId: appointmentApprovedId });
+    res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
   } catch (error) {
     console.error('Error adding appointment to the doctor list:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -1354,17 +1377,19 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
 });
 
 
+
+
 app.post("/assignTasksToClient", async (req, res) => {
   try {
     const { uid, puid, tasks } = req.body;
-
+    
     // Check if all required parameters are provided
     if (!uid || !puid || !tasks || !Array.isArray(tasks)) {
       return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or tasks parameter in the request body.' });
     }
 
     // Reference a new document in the 'tasksToClients' collection (Firestore will generate a unique ID)
-    const tasksToClientRef = admin.firestore().collection('tasksToClients').doc();
+    const tasksToClientRef = admin.firestore().collection('appointments').doc('Conversations').collection('tasksToClients').doc();
 
     // Get the generated ID from the document reference
     const taskId = tasksToClientRef.id;
@@ -1394,8 +1419,25 @@ app.post('/createChatConversation', async (req, res) => {
       return res.status(400).json({ message: 'Invalid request. Missing uid or puid parameter in the request body.' });
     }
 
+    // Check if a conversation already exists between uid and puid
+    const existingConversationQuery = await admin.firestore()
+      .collection('appointments')
+      .doc('Conversations')
+      .collection('chatConversations')
+      .where('uid', '==', uid)
+      .where('puid', '==', puid)
+      .limit(1)
+      .get();
+
+    if (!existingConversationQuery.empty) {
+      // Conversation already exists, return the existing conversation ID
+      const existingConversationData = existingConversationQuery.docs[0].data();
+      const existingConversationId = existingConversationData.conversationId;
+      return res.json({ message: 'Chat conversation already exists', conversationId: existingConversationId });
+    }
+
     // Reference a new document in the 'chatConversations' collection (Firestore will generate a unique ID)
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc();
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc();
 
     // Get the generated ID from the document reference
     const conversationId = chatConversationRef.id;
@@ -1414,6 +1456,7 @@ app.post('/createChatConversation', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 // Send message route
 app.post('/sendMessage', async (req, res) => {
   try {
@@ -1425,7 +1468,7 @@ app.post('/sendMessage', async (req, res) => {
     }
 
     // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc(conversationId);
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
 
     // Get the current conversation data
     const chatConversationDoc = await chatConversationRef.get();
@@ -1440,7 +1483,7 @@ app.post('/sendMessage', async (req, res) => {
    
 
     // Get the current timestamp
-    const timestamp = Date.now();
+    const timestamp = new Date().toISOString();
 
     // Update the messages array in the conversation document
     await chatConversationRef.update({
@@ -1469,7 +1512,7 @@ app.get('/getMessages/:conversationId', async (req, res) => {
     }
 
     // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('chatConversations').doc(conversationId);
+    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
 
     // Get the chat conversation document
     const chatConversationDoc = await chatConversationRef.get();
@@ -1487,16 +1530,145 @@ app.get('/getMessages/:conversationId', async (req, res) => {
   }
 });
 
+//here<<<<<<< main
+//hereapp.post('/generateAccesstoken' , async(req, res) => {
+  // For demonstration purposes, let's assume you receive user data in the request body
+//here const user = req.body;
+//here=======
+// app.post('/generateAccesstoken' = async(req, res) => {
+//   // For demonstration purposes, let's assume you receive user data in the request body
+//   const user = req.body;
+//here>>>>>>> main
+
+//   try {
+//       const accessToken = generateAccessToken(user);
+//       res.status(200).json({ accessToken: accessToken });
+//   } catch (error) {
+//       console.error('Error generating access token:', error.message);
+//       res.status(500).json({ error: 'Failed to generate access token' });
+//   }
+// });
+
+// // Function to generate an access token
+// function generateAccessToken(user) {
+//   // Define payload for the token (can include any user-related data)
+//   const payload = {
+//       userId: user.id,
+//       email: user.email,
+//       // You can include additional data if needed
+//   };
+
+//   //Set the secret key
+//   const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
+
+//   // Define options (optional)
+//   const options = {
+//       expiresIn: '15m' // Token expires in 15 minutes
+//   };
+
+//   // Generate the access token
+//   const accessToken = jwt.sign(payload, accessTokenSecret, options);
+
+//   return accessToken;
+// }
+// app.post(generateRefreshtoken = (req, res) => {
+//     // For demonstration purposes, let's assume you receive user data in the request body
+//     const user = req.body;
+  
+//     try {
+//         const refreshToken = generateRefreshToken(user);
+//         res.status(200).json({ refreshToken: refreshToken });
+//     } catch (error) {
+//         console.error('Error generating refresh token:', error.message);
+//         res.status(500).json({ error: 'Failed to generate refresh token' });
+//     }
+//   });
+  
+//   // Function to generate refresh token
+//   function generateRefreshToken(user) {
+//     // Define payload for the token (can include any user-related data)
+//     const payload = {
+//         userId: user.id,
+//         email: user.email,
+//         // You can include additional data if needed
+//     };
+  
+//     //Set the secret key
+//     const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET;
+  
+  
+//     // Define options (optional)
+//     const options = {
+//         expiresIn: '7d' // Token expires in 7 days
+//     };
+  
+//     // Generate the refresh token
+//     const refreshToken = jwt.sign(payload, refreshTokenSecret, options);
+  
+//     return refreshToken;
+//   }
+  
+  app.get('/api/messages', async (req, res) => {
+    try {
+      const messagesSnapshot = await admin.firestore().collection('messages').orderBy('timestamp').get();
+      const messagesData = messagesSnapshot.docs.map((doc) => doc.data());
+      res.json(messagesData);
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+// // chat soket.io routes
+// admin.firestore().settings({ ignoreUndefinedProperties: true });
+// const http = require('http');
+// const server = http.createServer(app);
+// const io = require("socket.io")(server, {
+//   allowRequest: (req, callback) => {
+//     // Assuming you want to allow all requests for simplicity
+//     // You might want to implement your own logic here
+//     callback(null, true);
+//   },
+//   cors: {
+//     origin: 'http://localhost:3000',
+//     methods: ['GET', 'POST'],
+//   }
+// });
+// io.on('connection', (socket) => {
+//   console.log('A user connected');
+
+//   socket.on('join', (uid) => {
+//     io.emit('message', { uid, text: 'joined the chat' });
+
+//     // You can also save the join event to Firestore if needed
+//     admin.firestore().collection('messages').add({
+//       uid,
+//       text: 'joined the chat',
+//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
+//     });
+//   });
+
+//   socket.on('message', (data) => {
+//     io.emit('message', data);
+
+//     // Save the message to Firestore
+//     admin.firestore().collection('messages').add({
+//       uid: data.uid,
+//       text: data.text,
+//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
+//     });
+//   });
+
+//   socket.on('disconnect', () => {
+//     console.log('User disconnected');
+//   });
+// });
 
 
+// // Start the Express server
+// server.listen(3002, () => {
+//   console.log(`Server is running on port ${3002}`);
+// });
 
-
-
-
-
-
-
-// Start the Express server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
