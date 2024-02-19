@@ -1461,6 +1461,92 @@ app.post("/assignTasksToClient", async (req, res) => {
   
 //     return refreshToken;
 //   }
+
+
+app.post("/api/sendmessages", async (req, res) => {
+  try {
+    const { puid, uids, message } = req.body;
+
+    // Iterate through each UID
+    for (const uid of uids) {
+      // Create the conversation ID by combining PUID and UID
+      const conversationId =generateConversationId(uid,puid);
+
+      // Get the reference to the Firestore document using the conversationId
+      const conversationRef = admin.firestore().collection('chat').doc(conversationId);
+      const timestamp = Date.now();
+
+      const newMessage = {
+        sender: puid,
+        text: message,
+        timestamp: timestamp,
+      };
+      // Update the document by appending the new message to the 'messages' array
+      await conversationRef.update({
+        messages: admin.firestore.FieldValue.arrayUnion(newMessage)
+      });
+    }
+
+    res.status(200).json({ success: true, message: 'Messages sent successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.post("/api/record", async (req, res) => {
+  try {
+    const { uid, puid, records } = req.body;
+
+    // Get the reference to the Firestore document using the provided UID
+    const userRecordRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
+      .collection('records').doc('record'); // Make sure this document exists
+
+    // Add timestamp to the document
+    const timestamp = Date.now();
+
+    // Update the document by appending the records to the 'records' array
+    await userRecordRef.update({
+      records: admin.firestore.FieldValue.arrayUnion({
+        puid,
+        timestamp,
+        records
+      })
+    });
+
+    res.status(200).json({ success: true, message: 'Records added successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.get("/api/record/:uid", async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // Get the reference to the Firestore document using the provided UID
+    const userRecordRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
+      .collection('records').doc('record'); // Make sure this document exists
+
+    // Retrieve the document data
+    const docSnapshot = await userRecordRef.get();
+
+    // Check if the document exists
+    if (docSnapshot.exists) {
+      const data = docSnapshot.data();
+      res.status(200).json({ success: true, data });
+    } else {
+      res.status(404).json({ success: false, error: 'Document not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+
+
+
+
   
 
 // chat soket.io routes
