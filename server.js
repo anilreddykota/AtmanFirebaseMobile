@@ -1382,125 +1382,7 @@ app.post("/assignTasksToClient", async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
-app.post('/createChatConversation', async (req, res) => {
-  try {
-    const { uid, puid } = req.body;
 
-    // Check if both uid and puid are provided
-    if (!uid || !puid) {
-      return res.status(400).json({ message: 'Invalid request. Missing uid or puid parameter in the request body.' });
-    }
-
-    // Check if a conversation already exists between uid and puid
-    const existingConversationQuery = await admin.firestore()
-      .collection('appointments')
-      .doc('Conversations')
-      .collection('chatConversations')
-      .where('uid', '==', uid)
-      .where('puid', '==', puid)
-      .limit(1)
-      .get();
-
-    if (!existingConversationQuery.empty) {
-      // Conversation already exists, return the existing conversation ID
-      const existingConversationData = existingConversationQuery.docs[0].data();
-      const existingConversationId = existingConversationData.conversationId;
-      return res.json({ message: 'Chat conversation already exists', conversationId: existingConversationId });
-    }
-
-    // Reference a new document in the 'chatConversations' collection (Firestore will generate a unique ID)
-    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc();
-
-    // Get the generated ID from the document reference
-    const conversationId = chatConversationRef.id;
-
-    // Set data for the specific document, including the conversation ID, client's user id, psychologist's user id, and any other relevant information
-    await chatConversationRef.set({
-      conversationId: conversationId,
-      uid: uid,
-      puid: puid,
-      messages: [], // Initialize with an empty array for messages
-    });
-
-    res.json({ message: 'Chat conversation created successfully', conversationId: conversationId });
-  } catch (error) {
-    console.error('Error creating chat conversation:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Send message route
-app.post('/sendMessage', async (req, res) => {
-  try {
-    const { conversationId, senderUid, message } = req.body;
-
-    // Check if required parameters are provided
-    if (!conversationId || !senderUid || !message) {
-      return res.status(400).json({ message: 'Invalid request. Missing conversationId, senderUid, or message parameter in the request body.' });
-    }
-
-    // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
-
-    // Get the current conversation data
-    const chatConversationDoc = await chatConversationRef.get();
-    const conversationData = chatConversationDoc.data();
-
-    // Ensure that the sender is either the client or the psychologist in the conversation
-    if (senderUid !== conversationData.uid && senderUid !== conversationData.puid) {
-      return res.status(403).json({ message: 'Forbidden. Sender is not allowed in this conversation.' });
-    }
-
-    // Get the current messages array
-   
-
-    // Get the current timestamp
-    const timestamp = new Date().toISOString();
-
-    // Update the messages array in the conversation document
-    await chatConversationRef.update({
-      messages: admin.firestore.FieldValue.arrayUnion({
-        senderUid: senderUid,
-        message: message,
-        timestamp: timestamp,
-      }),
-    });
-
-    res.json({ message: 'Message sent successfully' });
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Retrieve messages route
-app.get('/getMessages/:conversationId', async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-
-    // Check if conversationId is provided
-    if (!conversationId) {
-      return res.status(400).json({ message: 'Invalid request. Missing conversationId parameter in the request.' });
-    }
-
-    // Reference the chat conversation document
-    const chatConversationRef = admin.firestore().collection('appointments').doc('Conversations').collection('chatConversations').doc(conversationId);
-
-    // Get the chat conversation document
-    const chatConversationDoc = await chatConversationRef.get();
-
-    if (!chatConversationDoc.exists) {
-      return res.status(404).json({ message: 'Chat conversation not found.' });
-    }
-
-    const chatConversationData = chatConversationDoc.data();
-
-    res.json({ messages: chatConversationData.messages || [] });
-  } catch (error) {
-    console.error('Error retrieving messages:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
 //here<<<<<<< main
 //hereapp.post('/generateAccesstoken' , async(req, res) => {
@@ -1580,66 +1462,100 @@ app.get('/getMessages/:conversationId', async (req, res) => {
 //     return refreshToken;
 //   }
   
-  app.get('/api/messages', async (req, res) => {
+
+// chat soket.io routes
+admin.firestore().settings({ ignoreUndefinedProperties: true });
+const http = require('http');
+const server = http.createServer(app);
+const io = require("socket.io")(server, {
+  allowRequest: (req, callback) => {
+    // Assuming you want to allow all requests for simplicity
+    // You might want to implement your own logic here
+    callback(null, true);
+  },
+  cors: {
+    origin: 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+  }
+});
+function generateConversationId(userId1, userId2) {
+  // Sort the user IDs to ensure consistency
+  const sortedUserIds = [userId1, userId2].sort();
+
+  // Concatenate the sorted user IDs to form the conversation ID
+  return sortedUserIds.join('_');
+}
+const soketconnections = {}
+io.on('connection', (socket) => {
+  console.log('A user connected');
+
+  socket.on('join', (data) => {
+      soketconnections[data.sender]=socket.id;
+    // You can also save the join event to Firestore if needed
+  
+  });
+
+  socket.on('newmessage', async (data) => {
     try {
-      const messagesSnapshot = await admin.firestore().collection('messages').orderBy('timestamp').get();
-      const messagesData = messagesSnapshot.docs.map((doc) => doc.data());
-      res.json(messagesData);
+      const conversationId = generateConversationId(data.sender, data.receiver);
+  
+      // Reference the Firestore document for the conversation
+      const conversationRef = admin.firestore().collection('chat').doc(conversationId);
+  
+      // Check if the conversation document exists
+      const conversationSnapshot = await conversationRef.get();
+      const timestamp = Date.now();
+      const newMessage = {
+        sender: data.sender,
+        text: data.text,
+        timestamp: timestamp,
+      };
+  
+      if (!conversationSnapshot.exists) {
+        // If the document doesn't exist, create it with the initial message
+        await conversationRef.set({
+          messages: [newMessage],  // Start with an array containing the new message
+        });
+      } else {
+        // If the document already exists, update it with the new message
+        await conversationRef.update({
+          messages: admin.firestore.FieldValue.arrayUnion(newMessage),
+        });
+      }
+        io.to(soketconnections[data.receiver]).emit('newmessage', newMessage);
     } catch (error) {
-      console.error('Error fetching messages:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
+      console.error('Error handling new message:', error);
     }
   });
-// // chat soket.io routes
-// admin.firestore().settings({ ignoreUndefinedProperties: true });
-// const http = require('http');
-// const server = http.createServer(app);
-// const io = require("socket.io")(server, {
-//   allowRequest: (req, callback) => {
-//     // Assuming you want to allow all requests for simplicity
-//     // You might want to implement your own logic here
-//     callback(null, true);
-//   },
-//   cors: {
-//     origin: 'http://localhost:3000',
-//     methods: ['GET', 'POST'],
-//   }
-// });
-// io.on('connection', (socket) => {
-//   console.log('A user connected');
+  
+  socket.on('getPreviousMessages', async (data) => {
+    try {
+      const conversationId = generateConversationId(data.sender, data.receiver);
 
-//   socket.on('join', (uid) => {
-//     io.emit('message', { uid, text: 'joined the chat' });
+      // Reference to the conversation document
+      const conversationRef = admin.firestore().collection('chat').doc(conversationId);
 
-//     // You can also save the join event to Firestore if needed
-//     admin.firestore().collection('messages').add({
-//       uid,
-//       text: 'joined the chat',
-//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
-//     });
-//   });
+      // Get the current messages array
+      const conversationDoc = await conversationRef.get();
+      const previousMessages = conversationDoc.data()?.messages || [];
+      io.emit('previousmessages', previousMessages)
 
-//   socket.on('message', (data) => {
-//     io.emit('message', data);
+    } catch (error) {
+      console.error('Error getting previous messages:', error);
+    }
+  });
+  
 
-//     // Save the message to Firestore
-//     admin.firestore().collection('messages').add({
-//       uid: data.uid,
-//       text: data.text,
-//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
-//     });
-//   });
-
-//   socket.on('disconnect', () => {
-//     console.log('User disconnected');
-//   });
-// });
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
 
 
-// // Start the Express server
-// server.listen(3002, () => {
-//   console.log(`Server is running on port ${3002}`);
-// });
+// Start the Express server
+server.listen(3002, () => {
+  console.log(`Server is running on port ${3002}`);
+});
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
