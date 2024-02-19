@@ -74,7 +74,7 @@ app.post('/registerUser', async (req, res) => {
           if (!userData || !userData.nickname) {
               // User doesn't have a nickname, update details and re-register
               await updateUserAndReRegister(existingUserRecord.uid, email, password);
-              return res.json({ message: 'registration successful', uid: existingUserRecord.uid });
+              return res.json({ message: 'registration`', uid: existingUserRecord.uid });
           } else {
               // User already registered with a nickname
               return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
@@ -140,60 +140,6 @@ async function updateUserAndReRegister(uid, email, password) {
   }
 }
 
-
-
-
-
-
-    
-    
-//     // User already exists
-//     // Check if user has a nickname
-//     const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).get();
-//     if (userDoc.exists) {
-//       const userData = userDoc.data();
-//       if (!userData || !userData.nickname) {
-//         // Delete existing user details
-//         await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).delete();
-//         // Re-register the user with the same UID
-//         const hashedPassword = await bcrypt.hash(password, 15);
-//         await admin.auth().updateUser(existingUserRecord.uid, {
-//           password: hashedPassword,
-//         });
-//         // Update user details in Firestore
-//         const newUserDetails = {
-//           email,
-//           password: hashedPassword
-//         };
-//         await admin.firestore().collection('users').doc("userDetails").collection("details").doc(existingUserRecord.uid).set(newUserDetails);
-//         // Respond with success message and user UID
-//         return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
-//       }
-//       // User already registered with a nickname, return error
-//       return res.status(400).json({ message: 'User already registered' });
-//     } else {
-//       // User document does not exist in Firestore, register the user
-//       const hashedPassword = await bcrypt.hash(password, 15);
-//       const userRecord = await admin.auth().createUser({
-//         email,
-//         password: hashedPassword,
-//       });
-//       // Store user details in Firestore
-//       const userData = {
-//         email,
-//         password: hashedPassword
-//       };
-//       await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set(userData);
-//       // Respond with a success message and user UID
-//       return res.json({ message: 'Registration successful', uid: userRecord.uid });
-//     }
-    
-//   } catch (error) {
-//     console.error('Error in registration:', error);
-//     res.status(500).json({ message: 'Internal Server Error' });
-//   }
-// }
-// );
 
 
 
@@ -411,7 +357,6 @@ async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
   return snapshot.size + 1; // Incrementing the count for the next question
 }
-// app.post('/store-question', async (req, res) => {
 //   try {
 //     const { question } = req.body;
 
@@ -1028,6 +973,38 @@ app.post('/registerPsychologist', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.post('/psychologistBio', async (req, res) => {
+  try {
+    const { puid, bio } = req.body;
+    // Update user data in Firestore (add or update the biography and set visibility to true)
+    await admin.firestore().collection('psychologists').doc(puid).set(
+      {
+        bio,
+        visibility: true
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+    res.json({ message: 'Biography saved successfully', puid: puid });
+  } catch (error) {
+    console.error('Error in saving psychologist biography:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+app.post('/hidePsychologistProfile', async (req, res) => {
+  try {
+    const { puid } = req.body;
+
+    // Update user data in Firestore to set visibility to false
+    await admin.firestore().collection('psychologists').doc(puid).update({
+      visibility: false
+    });
+
+    res.json({ message: 'Psychologist profile hidden successfully', puid: puid });
+  } catch (error) {
+    console.error('Error in hiding psychologist profile:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 app.post('/psychologistdetails', async (req, res) => {
   try {
@@ -1530,83 +1507,7 @@ app.get('/getMessages/:conversationId', async (req, res) => {
   }
 });
 
-//here<<<<<<< main
-//hereapp.post('/generateAccesstoken' , async(req, res) => {
-  // For demonstration purposes, let's assume you receive user data in the request body
-//here const user = req.body;
-//here=======
-// app.post('/generateAccesstoken' = async(req, res) => {
-//   // For demonstration purposes, let's assume you receive user data in the request body
-//   const user = req.body;
-//here>>>>>>> main
 
-//   try {
-//       const accessToken = generateAccessToken(user);
-//       res.status(200).json({ accessToken: accessToken });
-//   } catch (error) {
-//       console.error('Error generating access token:', error.message);
-//       res.status(500).json({ error: 'Failed to generate access token' });
-//   }
-// });
-
-// // Function to generate an access token
-// function generateAccessToken(user) {
-//   // Define payload for the token (can include any user-related data)
-//   const payload = {
-//       userId: user.id,
-//       email: user.email,
-//       // You can include additional data if needed
-//   };
-
-//   //Set the secret key
-//   const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
-
-//   // Define options (optional)
-//   const options = {
-//       expiresIn: '15m' // Token expires in 15 minutes
-//   };
-
-//   // Generate the access token
-//   const accessToken = jwt.sign(payload, accessTokenSecret, options);
-
-//   return accessToken;
-// }
-// app.post(generateRefreshtoken = (req, res) => {
-//     // For demonstration purposes, let's assume you receive user data in the request body
-//     const user = req.body;
-  
-//     try {
-//         const refreshToken = generateRefreshToken(user);
-//         res.status(200).json({ refreshToken: refreshToken });
-//     } catch (error) {
-//         console.error('Error generating refresh token:', error.message);
-//         res.status(500).json({ error: 'Failed to generate refresh token' });
-//     }
-//   });
-  
-//   // Function to generate refresh token
-//   function generateRefreshToken(user) {
-//     // Define payload for the token (can include any user-related data)
-//     const payload = {
-//         userId: user.id,
-//         email: user.email,
-//         // You can include additional data if needed
-//     };
-  
-//     //Set the secret key
-//     const refreshTokenSecret = process.env.REFRESH_TOKEN_SECRET;
-  
-  
-//     // Define options (optional)
-//     const options = {
-//         expiresIn: '7d' // Token expires in 7 days
-//     };
-  
-//     // Generate the refresh token
-//     const refreshToken = jwt.sign(payload, refreshTokenSecret, options);
-  
-//     return refreshToken;
-//   }
   
   app.get('/api/messages', async (req, res) => {
     try {
@@ -1618,56 +1519,44 @@ app.get('/getMessages/:conversationId', async (req, res) => {
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
-// // chat soket.io routes
-// admin.firestore().settings({ ignoreUndefinedProperties: true });
-// const http = require('http');
-// const server = http.createServer(app);
-// const io = require("socket.io")(server, {
-//   allowRequest: (req, callback) => {
-//     // Assuming you want to allow all requests for simplicity
-//     // You might want to implement your own logic here
-//     callback(null, true);
-//   },
-//   cors: {
-//     origin: 'http://localhost:3000',
-//     methods: ['GET', 'POST'],
-//   }
-// });
-// io.on('connection', (socket) => {
-//   console.log('A user connected');
+// POST method to store pictures with indexing using multer
+app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
+  try {
+    const { buffer } = req.file;
 
-//   socket.on('join', (uid) => {
-//     io.emit('message', { uid, text: 'joined the chat' });
+    // Upload the image to Firebase Storage
+    const imageFilename = `${uuidv4()}.jpg`;
+    const storageRef = admin.storage().bucket().file(imageFilename);
+    await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
-//     // You can also save the join event to Firestore if needed
-//     admin.firestore().collection('messages').add({
-//       uid,
-//       text: 'joined the chat',
-//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
-//     });
-//   });
+    // Get the URL of the uploaded image
+    const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
+      imageFilename
+    )}?alt=media`;
 
-//   socket.on('message', (data) => {
-//     io.emit('message', data);
+    // Get the current date
+    const currentDate = new Date();
 
-//     // Save the message to Firestore
-//     admin.firestore().collection('messages').add({
-//       uid: data.uid,
-//       text: data.text,
-//       timestamp: admin.firestore.FieldValue.serverTimestamp(),
-//     });
-//   });
+    // Create a new daily picture object
+    const dailyPicture = {
+      imageUrl,
+      date: currentDate,
+    };
 
-//   socket.on('disconnect', () => {
-//     console.log('User disconnected');
-//   });
-// });
+    // Reference to the "daily_pictures" collection in the "users" collection
+    const dailyPicturesRef = admin.firestore().collection('users').doc().collection('daily_pictures');
+
+    // Add the new daily picture to the daily pictures collection
+    await dailyPicturesRef.add(dailyPicture);
+
+    res.json({ message: 'Daily picture created successfully' });
+  } catch (error) {
+    console.error('Error in create-daily-picture route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 
-// // Start the Express server
-// server.listen(3002, () => {
-//   console.log(`Server is running on port ${3002}`);
-// });
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
