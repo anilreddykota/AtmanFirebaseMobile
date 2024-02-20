@@ -725,28 +725,6 @@ app.post('/create-family-goal', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-app.post('/create-learning-goal', async (req, res) => {
-  try {
-    const { uid, learningGoal } = req.body;
-
-    const currentDate = new Date();
-    const formattedDate = formatDateForDocumentId(currentDate);
-
-    // Create a reference to the document based on the user's UID and the formatted date
-    const learningGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('learning_goal').doc(formattedDate);
-
-    // Update the learning goal or create a new document if it doesn't exist
-    await learningGoalRef.set({
-      learningGoal,
-      date: currentDate,
-    }, { merge: true });
-
-    res.json({ message: 'Learning goal updated successfully', goalId: learningGoalRef.id });
-  } catch (error) {
-    console.error('Error in create-learning-goal route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
 app.post('/add-rating', async (req, res) => {
   try {
     const { uid, techniqueId, rating } = req.body;
@@ -777,6 +755,86 @@ app.post('/add-rating', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.post('/create-learning-goal', async (req, res) => {
+  try {
+    const { uid, learningGoal } = req.body;
+
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+
+    // Create a reference to the document based on the user's UID and the formatted date
+    const learningGoalRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('learning_goal').doc(formattedDate);
+
+    // Update the learning goal or create a new document if it doesn't exist
+    await learningGoalRef.set({
+      learningGoal,
+      date: currentDate,
+    }, { merge: true });
+
+    res.json({ message: 'Learning goal updated successfully', goalId: learningGoalRef.id });
+  } catch (error) {
+    console.error('Error in create-learning-goal route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/submit-daily-journal-answer', async (req, res) => {
+  try {
+    const { uid, answer } = req.body;
+
+    // Get the current date
+    const currentDate = new Date();
+    const formattedDate = formatDateForDocumentId(currentDate);
+    console.log(formattedDate)
+    const answerRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('dailyjournalanswers').doc(formattedDate);
+    
+     
+
+    // Set the answer document with the provided answer and current date
+    await answerRef.set({
+      answer,
+      date: currentDate,
+    }, { merge: true }); // Merge with existing data if document already exists
+
+    res.json({ message: 'Daily journal answer submitted successfully', answerId: answerRef.id });
+  } catch (error) {
+    console.error('Error in submit-daily-journal-answer route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.get('/random-questions', async (req, res) => {
+  try {
+    // Create a reference to the 'users' collection
+    const usersCollectionRef = admin.firestore().collection('users');
+
+    // Get all sets
+    const setsSnapshot = await usersCollectionRef.doc('selftest').collection('questions').get();
+
+    let allQuestions = [];
+
+    // Iterate through each set
+    setsSnapshot.forEach(setDoc => {
+      const setData = setDoc.data();
+      Object.entries(setData).forEach(([key, value]) => {
+        // Extract set, text, options, scores, and index for each question
+        const { text, options, scores } = value;
+        const question = { set: setDoc.id, text, options, scores, index: parseInt(key) };
+        allQuestions.push(question);
+      });
+    });
+
+    // Shuffle the array of all questions
+    allQuestions.sort(() => Math.random() - 0.5);
+
+    res.json(allQuestions);
+  } catch (error) {
+    console.error('Error fetching random questions:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
 
 
 
@@ -827,32 +885,6 @@ app.post('/questions', async (req, res) => {
   }
 });
 
-app.post('/submit-answers', async (req, res) => {
-  try {
-    const { uid, answers } = req.body;
-
-    // Create a reference to the user's document
-    const userDocRef = admin.firestore().collection('users').doc(uid);
-
-    // Get the current date
-    const currentDate = new Date().toISOString();
-
-    // Create a reference to the 'selftest' subcollection for the current date
-    const selfTestCollectionRef = userDocRef.collection('selftest').doc(currentDate);
-
-    // Set the answers within the 'selftest' subcollection
-    await selfTestCollectionRef.set({ answers });
-
-    // Calculate the overall score and individual set scores
-    const overallScore = calculateOverallScore(answers);
-    const setScores = calculateSetScores(answers);
-
-    res.json({ message: 'Answers submitted successfully', overallScore, setScores });
-  } catch (error) {
-    console.error('Error submitting answers:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
 
 app.post('/change-password', authenticateUser, async (req, res) => {
   try {
@@ -1555,7 +1587,289 @@ app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+// const messaging = admin.messaging();
 
+// const sendPushNotification = async (token, text) => {
+//   try {
+//     const message = {
+//       data: {
+//         message: text
+//       },
+//       token: token
+//     };
+
+//     // Send the push notification
+//     await messaging.send(message);
+//   } catch (error) {
+//     console.error('Error sending push notification:', error);
+//     throw error; // Rethrow the error to handle it elsewhere if needed
+//   }
+// };
+
+// // Example usage
+// const token = 'fHYqG-anQ_alDk2Ri90n7s:APA91bHMGMc94LvB8awFp1jKhvcV4-Zql2ozR7lg8RzXFGjiYePeGINaOMpnUMzzc1eqU_oTe9i8sPVY7JKEizey5nVOrA-n9EYK2aimZWpqFuNN5FosPmpTyxDSFFI76lTvfdfBdpIY';
+// const text = 'Test notification message';
+// const from = 'Admin';
+// sendPushNotification(token, text, from)
+//   .then(() => {
+//     console.log('Push notification sent successfully');
+//   })
+//   .catch((error) => {
+//     console.error('Failed to send push notification:', error);
+//   });
+
+// app.post('/send-notification', (req, res) => {
+//   const message = {
+//     notification: {
+//       title: 'Welcome to Psycove Family',
+//       body: 'Welcome to Psycove Family! We are glad to have you with us.',
+//       image: 'https://tse4.mm.bing.net/th?id=OIP.JD-BAHN2ZBqPK0qswYJ7ugHaGJ&pid=Api&P=0&h=180',
+//     },
+//     token: deviceToken,
+//   };
+
+//   admin.messaging().send(message)
+//     .then((response) => {
+//       console.log('Successfully sent message:', response);
+//       res.status(200).send('Notification sent successfully');
+//     })
+//     .catch((error) => {
+//       console.error('Error sending message:', error);
+//       res.status(500).send('Error sending notification');
+//     });
+// });
+// app.post('/send-notification', (req, res) => {
+//   const { token, message } = req.body; 
+//   const payload = {
+//     notification: {
+//       title: 'Your Title',
+//       body: message,
+//     },
+//   };
+
+//   admin.messaging().sendToDevice(token, payload)
+//     .then((response) => {
+//       console.log('Notification sent successfully:', response);
+//       res.status(200).send('Notification sent successfully');
+//     })
+//     .catch((error) => {
+//       console.error('Error sending notification:', error);
+//       res.status(500).send('Error sending notification');
+//     });
+// });
+// POST method to store pictures with indexing using multer
+app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
+  try {
+    const { buffer } = req.file;
+
+    // Upload the image to Firebase Storage
+    const imageFilename = `${uuidv4()}.jpg`;
+    const storageRef = admin.storage().bucket().file(imageFilename);
+    await storageRef.save(buffer, { contentType: 'image/jpeg' });
+
+    // Get the URL of the uploaded image
+    const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
+      imageFilename
+    )}?alt=media`;
+
+    // Get the current date
+    const currentDate = new Date();
+
+    // Create a new daily picture object
+    const dailyPicture = {
+      imageUrl,
+      date: currentDate,
+    };
+
+    // Reference to the "daily_pictures" collection in the "users" collection
+    const dailyPicturesRef = admin.firestore().collection('users').doc().collection('daily_pictures');
+
+    // Add the new daily picture to the daily pictures collection
+    await dailyPicturesRef.add(dailyPicture);
+
+    res.json({ message: 'Daily picture created successfully' });
+  } catch (error) {
+    console.error('Error in create-daily-picture route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+admin.firestore().settings({ ignoreUndefinedProperties: true });
+const http = require('http');
+const server = http.createServer(app);
+const io = require("socket.io")(server, {
+  allowRequest: (req, callback) => {
+    // Assuming you want to allow all requests for simplicity
+    // You might want to implement your own logic here
+    callback(null, true);
+  },
+  cors: {
+    origin: 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+  }
+});
+function generateConversationId(userId1, userId2) {
+  // Sort the user IDs to ensure consistency
+  const sortedUserIds = [userId1, userId2].sort();
+
+  // Concatenate the sorted user IDs to form the conversation ID
+  return sortedUserIds.join('_');
+}
+const soketconnections = {}
+io.on('connection', (socket) => {
+  console.log('A user connected');
+
+  socket.on('join', (data) => {
+      soketconnections[data.sender]=socket.id;
+    // You can also save the join event to Firestore if needed
+  
+  });
+
+  socket.on('newmessage', async (data) => {
+    try {
+      const conversationId = generateConversationId(data.sender, data.receiver);
+  
+      // Reference the Firestore document for the conversation
+      const conversationRef = admin.firestore().collection('chat').doc(conversationId);
+  
+      // Check if the conversation document exists
+      const conversationSnapshot = await conversationRef.get();
+      const timestamp = Date.now();
+      const newMessage = {
+        sender: data.sender,
+        text: data.text,
+        timestamp: timestamp,
+      };
+  
+      if (!conversationSnapshot.exists) {
+        // If the document doesn't exist, create it with the initial message
+        await conversationRef.set({
+          messages: [newMessage],  // Start with an array containing the new message
+        });
+      } else {
+        // If the document already exists, update it with the new message
+        await conversationRef.update({
+          messages: admin.firestore.FieldValue.arrayUnion(newMessage),
+        });
+      }
+        io.to(soketconnections[data.receiver]).emit('newmessage', newMessage);
+    } catch (error) {
+      console.error('Error handling new message:', error);
+    }
+  });
+  
+  socket.on('getPreviousMessages', async (data) => {
+    try {
+      const conversationId = generateConversationId(data.sender, data.receiver);
+
+      // Reference to the conversation document
+      const conversationRef = admin.firestore().collection('chat').doc(conversationId);
+
+      // Get the current messages array
+      const conversationDoc = await conversationRef.get();
+      const previousMessages = conversationDoc.data()?.messages || [];
+      io.emit('previousmessages', previousMessages)
+
+    } catch (error) {
+      console.error('Error getting previous messages:', error);
+    }
+  });
+  
+
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
+
+
+
+
+
+app.post("/api/sendmessages", async (req, res) => {
+  try {
+    const { puid, uids, message } = req.body;
+
+    // Iterate through each UID
+    for (const uid of uids) {
+      // Create the conversation ID by combining PUID and UID
+      const conversationId =generateConversationId(uid,puid);
+
+      // Get the reference to the Firestore document using the conversationId
+      const conversationRef = admin.firestore().collection('chat').doc(conversationId);
+      const timestamp = Date.now();
+
+      const newMessage = {
+        sender: puid,
+        text: message,
+        timestamp: timestamp,
+      };
+      // Update the document by appending the new message to the 'messages' array
+      await conversationRef.update({
+        messages: admin.firestore.FieldValue.arrayUnion(newMessage)
+      });
+    }
+
+    res.status(200).json({ success: true, message: 'Messages sent successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.post("/api/record", async (req, res) => {
+  try {
+    const { uid, puid, records } = req.body;
+
+    // Get the reference to the Firestore document using the provided UID
+    const userRecordRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
+      .collection('records').doc('record'); // Make sure this document exists
+
+    // Add timestamp to the document
+    const timestamp = Date.now();
+
+    // Update the document by appending the records to the 'records' array
+    await userRecordRef.update({
+      records: admin.firestore.FieldValue.arrayUnion({
+        puid,
+        timestamp,
+        records
+      })
+    });
+
+    res.status(200).json({ success: true, message: 'Records added successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.get("/api/record/:uid", async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // Get the reference to the Firestore document using the provided UID
+    const userRecordRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid)
+      .collection('records').doc('record'); // Make sure this document exists
+
+    // Retrieve the document data
+    const docSnapshot = await userRecordRef.get();
+
+    // Check if the document exists
+    if (docSnapshot.exists) {
+      const data = docSnapshot.data();
+      res.status(200).json({ success: true, data });
+    } else {
+      res.status(404).json({ success: false, error: 'Document not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+// Start the Express server
+server.listen(3002, () => {
+  console.log(`Server is running on port ${3002}`);
+});
 
 
 app.listen(port, () => {
