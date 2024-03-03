@@ -802,6 +802,34 @@ app.post('/submit-daily-journal-answer', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.get('/daily-journal-date', async (req, res) => {
+  try {
+    const { uid,date } = req.body;
+
+    if (!uid || !date) {
+      return res.status(400).json({ message: 'Both uid and date parameters are required' });
+    }
+
+    // Retrieve the answer document from Firestore
+    const docRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('dailyjournalanswers').doc(date);
+    const doc = await docRef.get();
+
+    // Check if the document exists
+    if (!doc.exists) {
+      return res.status(404).json({ message: 'Answer not found for the provided date' });
+    }
+
+    // Extract the answer from the document
+    const answer = doc.data().answer;
+
+    // Send the answer in the response
+    res.json({ answer });
+  } catch (error) {
+    console.error('Error in daily-journal-date route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 app.get('/random-questions', async (req, res) => {
   try {
@@ -1587,6 +1615,43 @@ app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+const bucket = admin.storage().bucket();
+
+
+// Define a route to handle file uploads
+app.post('/uploadaudio', upload.single('audio'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No file uploaded.');
+  }
+
+  const file = req.file;
+
+  // Create a reference to the file in Firebase Storage
+  const fileRef = bucket.file(file.originalname);
+
+  // Create a write stream to upload the file data
+  const uploadStream = fileRef.createWriteStream({
+    metadata: {
+      contentType: file.mimetype,
+    },
+  });
+
+  // Handle errors during the upload
+  uploadStream.on('error', (err) => {
+    console.error('Error uploading file:', err);
+    res.status(500).send('Error uploading file.');
+  });
+
+  // Handle successful upload
+  uploadStream.on('finish', () => {
+    console.log('File uploaded successfully.');
+    res.status(200).send('File uploaded successfully.');
+  });
+
+  // Pipe the file data to the write stream
+  uploadStream.end(file.buffer);
+});
+
 // const messaging = admin.messaging();
 
 // const sendPushNotification = async (token, text) => {
