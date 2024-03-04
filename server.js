@@ -804,7 +804,7 @@ app.post('/submit-daily-journal-answer', async (req, res) => {
 });
 app.get('/daily-journal-date', async (req, res) => {
   try {
-    const { uid,date } = req.query;
+    const { uid, date } = req.query; // Use req.query to access query parameters
 
     if (!uid || !date) {
       return res.status(400).json({ message: 'Both uid and date parameters are required' });
