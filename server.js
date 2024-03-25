@@ -175,6 +175,7 @@ app.post('/registerUserNickname', async (req, res) => {
     await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
         nickname,
+        profile:'https://firebasestorage.googleapis.com/v0/b/psycove-4ebf5.appspot.com/o/defaultpic.jpeg?alt=media'
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
@@ -479,7 +480,8 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
       description,
       imageUrl,
       date: currentDate,
-      approved: 0
+      approved: 0,
+      likes:0
     };
 
     // Reference to the "posts" document in the "users" collection
@@ -506,6 +508,84 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.post('/like-post', async (req, res) => {
+  try {
+    const { postId } = req.query; // Extract the postId from the query parameters
+
+    // Reference to the "posts" document in the "users" collection
+    const postsDocRef = admin.firestore().collection('users').doc('posts');
+
+    // Retrieve the posts document
+    const postsDoc = await postsDocRef.get();
+
+    if (postsDoc.exists) {
+      const postData = postsDoc.data();
+      
+      // Find the post with the matching postId
+      const postIndex = postData.posts.findIndex(post => post.postId === postId);
+
+      if (postIndex !== -1) {
+        // Increment the likes for the post
+        postData.posts[postIndex].likes = (postData.posts[postIndex].likes || 0) + 1;
+
+        // Update the document with the incremented likes
+        await postsDocRef.update({
+          posts: postData.posts
+        });
+
+        res.json({ message: 'Post liked successfully', likes: postData.posts[postIndex].likes });
+      } else {
+        res.status(404).json({ message: 'Post not found' });
+      }
+    } else {
+      res.status(404).json({ message: 'No posts found' });
+    }
+  } catch (error) {
+    console.error('Error in like-post route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+app.post('/dislike-post', async (req, res) => {
+  try {
+    const { postId } = req.query; // Extract the postId from the query parameters
+
+    // Reference to the "posts" document in the "users" collection
+    const postsDocRef = admin.firestore().collection('users').doc('posts');
+
+    // Retrieve the posts document
+    const postsDoc = await postsDocRef.get();
+
+    if (postsDoc.exists) {
+      const postData = postsDoc.data();
+      
+      // Find the post with the matching postId
+      const postIndex = postData.posts.findIndex(post => post.postId === postId);
+
+      if (postIndex !== -1) {
+        // Decrement the likes for the post
+        postData.posts[postIndex].likes = Math.max((postData.posts[postIndex].likes || 0) - 1, 0);
+
+        // Update the document with the decremented likes
+        await postsDocRef.update({
+          posts: postData.posts
+        });
+
+        res.json({ message: 'Post disliked successfully', likes: postData.posts[postIndex].likes });
+      } else {
+        res.status(404).json({ message: 'Post not found' });
+      }
+    } else {
+      res.status(404).json({ message: 'No posts found' });
+    }
+  } catch (error) {
+    console.error('Error in dislike-post route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
 app.get('/getapprovedposts', async (req, res) => {
   try {
     // Reference to the "posts" document in the "users" collection
@@ -554,7 +634,6 @@ app.get('/getunapprovedposts', async (req, res) => {
 });
 
 
-// Function to check if a goal exists for the current date
 const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
   const snapshot = await admin.firestore().collection('users').doc(uid).collection(subcollection)
     .where('date', '==', currentDate)
@@ -563,8 +642,6 @@ const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
   return !snapshot.empty;
 };
 
-// API to create daily goal for a user
-// Function to get the document reference for a goal on a specific date
 const getGoalDocumentRefForDate = async (uid, subcollection, currentDate) => {
   const snapshot = await admin.firestore().collection('users').doc(uid).collection(subcollection)
     .where('date', '==', currentDate)
@@ -577,8 +654,6 @@ const getGoalDocumentRefForDate = async (uid, subcollection, currentDate) => {
 
   return null;
 };
-// API to create daily goal for a user
-// Function to format the date as a string for use in the document ID
 const formatDateForDocumentId = (date) => {
   const year = date.getFullYear();
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -586,7 +661,6 @@ const formatDateForDocumentId = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// API to create daily goal for a user
 app.post('/create-work-goal', async (req, res) => {
   try {
     const { uid, workGoal } = req.body;
@@ -842,22 +916,6 @@ app.get('/random-questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// API to create family goal for a user
-
 app.post('/questions', async (req, res) => {
   try {
     const { set, text, options, scores } = req.body;
@@ -931,13 +989,10 @@ app.post('/change-password', authenticateUser, async (req, res) => {
 app.get('/get-nickname/:uid', async (req, res) => {
   try {
     const uid = req.params.uid;
-
-    // Retrieve user data from Firestore using the provided UID
     const userDocRef = admin.firestore().collection('users').doc("userDetails").collection().doc(uid);
     const userDoc = await userDocRef.get();
 
     if (userDoc.exists) {
-      // Check if the user has a nickname
       const userNickname = userDoc.data().nickname;
 
       if (userNickname) {
@@ -971,13 +1026,11 @@ async function authenticatePsychologist(req, res, next) {
   }
 }
 
-//checking Name of psychologists
 async function isPsychologistNicknameTaken(nickname) {
   const snapshot = await admin.firestore().collection('psychologists').where('nickname', '==', nickname).get();
   return !snapshot.empty;
 }
 
-//register the psychologists name 
 app.post('/registerPsychologist', async (req, res) => {
   try {
     const { email, password } = req.body;
