@@ -9,11 +9,9 @@ const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const upload = multer();
 
-// const port = process.env.PORT || 3001;
 const port = 3001;
 const cors = require('cors'); 
 app.use(cors());
-//const authenticateUser = require('./authenticateUser'); // Reference to the authentication middleware
 
 // Initialize Firebase Admin SDK
 
@@ -357,31 +355,7 @@ async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
   return snapshot.size + 1; // Incrementing the count for the next question
 }
-//   try {
-//     const { question } = req.body;
 
-//     // Get the reference to the document
-//     const dailyJournalRef = admin.firestore().collection('users').doc('dailyjournal');
-
-//     // Get the current questions data
-//     const dailyJournalDoc = await dailyJournalRef.get();
-//     let dailyJournalData = dailyJournalDoc.exists ? dailyJournalDoc.data() : { questions: {} };
-
-//     // Get the index for the new question
-//     const index = Object.keys(dailyJournalData.questions).length + 1;
-
-//     // Add the new question to the questions object with the index mapping
-//     dailyJournalData.questions[index] = question;
-
-//     // Update the document in Firestore
-//     await dailyJournalRef.set(dailyJournalData);
-
-//     res.json({ message: 'Question stored successfully', index, question });
-//   } catch (error) {
-//     console.error('Error in store-question route:', error);
-//     res.status(500).json({ message: 'Internal Server Error' });
-//   }
-// });
 
 
 
@@ -479,13 +453,9 @@ app.get('/get-next-question', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-
-
-
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
-    const { title, description } = req.body;
+    const { title, description,uid} = req.body;
     const { buffer } = req.file;
 
     // Upload the image to Firebase Storage
@@ -493,15 +463,18 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
     const storageRef = admin.storage().bucket().file(imageFilename);
     await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
-    // Get the URL of the uploaded image
     const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
       imageFilename
     )}?alt=media`;
-    // Get the current date
+
     const currentDate = new Date();
 
-    // Create a new post object
+    const postId = uuidv4();
+
+
     const post = {
+      postId, // Add unique ID for the post
+      uid, // Add UID value for the post
       title,
       description,
       imageUrl,
@@ -527,51 +500,59 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
       });
     }
 
-    res.json({ message: 'Post created successfully' });
+    res.json({ message: 'Post created successfully', postId }); // Return the postId
   } catch (error) {
     console.error('Error in create-post route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-app.get('/get-unapproved-posts', async (req, res) => {
-  try {
-    // Get all posts where approved is 0
-    const postsSnapshot = await admin.firestore().collection('posts').where('approved', '==', 0).get();
-
-    // Extract post data from snapshot
-    const unapprovedPosts = postsSnapshot.docs.map(doc => doc.data());
-
-    console.log('All unapproved posts:', unapprovedPosts); // Log for debugging
-
-    res.json({ unapprovedPosts });
-  } catch (error) {
-    console.error('Error in get-unapproved-posts route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
-
-app.get('/get-posts', async (req, res) => {
+app.get('/getapprovedposts', async (req, res) => {
   try {
     // Reference to the "posts" document in the "users" collection
     const postsDocRef = admin.firestore().collection('users').doc('posts');
 
-    // Retrieve the current posts data
+    // Retrieve the posts document
     const postsDoc = await postsDocRef.get();
 
     if (postsDoc.exists) {
-      const postsData = postsDoc.data();
-      // Sort posts by date in descending order
-      const sortedPosts = postsData.posts.sort((a, b) => b.date - a.date);
-      res.json({ posts: sortedPosts });
+      const postData = postsDoc.data();
+      
+      // Filter posts with approved status equals 1
+      const approvedPosts = postData.posts.filter(post => post.approved === 1);
+
+      res.json({ posts: approvedPosts });
     } else {
-      res.status(404).json({ message: 'No posts found' });
+      res.json({ message: 'No posts found' });
     }
   } catch (error) {
-    console.error('Error in get-posts route:', error);
+    console.error('Error in getposts route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.get('/getunapprovedposts', async (req, res) => {
+  try {
+    // Reference to the "posts" document in the "users" collection
+    const postsDocRef = admin.firestore().collection('users').doc('posts');
+
+    // Retrieve the posts document
+    const postsDoc = await postsDocRef.get();
+
+    if (postsDoc.exists) {
+      const postData = postsDoc.data();
+      
+      // Filter posts with approved status equals 0
+      const unapprovedPosts = postData.posts.filter(post => post.approved === 0);
+
+      res.json({ posts: unapprovedPosts });
+    } else {
+      res.json({ message: 'No posts found' });
+    }
+  } catch (error) {
+    console.error('Error in getunapprovedposts route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 // Function to check if a goal exists for the current date
 const doesGoalExistForDate = async (uid, subcollection, currentDate) => {
@@ -804,7 +785,7 @@ app.post('/submit-daily-journal-answer', async (req, res) => {
 });
 app.get('/daily-journal-date', async (req, res) => {
   try {
-    const { uid, date } = req.query; // Use req.query to access query parameters
+    const { uid,date } = req.query;
 
     if (!uid || !date) {
       return res.status(400).json({ message: 'Both uid and date parameters are required' });
