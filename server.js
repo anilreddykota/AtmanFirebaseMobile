@@ -347,53 +347,10 @@ app.post('/verify-otp', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-
-
-
-
-// Middleware to get the current question count
 async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
   return snapshot.size + 1; // Incrementing the count for the next question
 }
-
-
-
-
-// app.get('/get-next-question', async (req, res) => {
-//   try {
-//     // Get the reference to the document containing the last fetched question index
-//     const indexDocRef = admin.firestore().collection('users').doc('dailyjournal').collection('lastFetchedQuestionIndex');
-    
-//     // Get the current index data
-//     const indexDoc = await indexDocRef.get();
-//     let lastFetchedQuestionIndex = indexDoc.exists ? indexDoc.data().index : 0;
-
-//     // Query the next question
-//     let query = admin.firestore().collection('users').doc('dailyjournal').collection('questions').doc(lastFetchedQuestionIndex.toString());
-
-//     // Get the next question
-//     const questionDoc = await query.get();
-
-//     if (questionDoc.exists) {
-//       const nextQuestion = questionDoc.data().question;
-      
-//       // Increment the index for the next question
-//       lastFetchedQuestionIndex++;
-
-//       // Update the last fetched question index in Firestore
-//       await indexDocRef.set({ index: lastFetchedQuestionIndex });
-
-//       res.json({ question: nextQuestion });
-//     } else {
-//       res.status(404).json({ message: 'No questions found' });
-//     }
-//   } catch (error) {
-//     console.error('Error in get-next-question route:', error);
-//     res.status(500).json({ message: 'Internal Server Error' });
-//   }
-// });
-// Initialize with 0
 app.post('/store-question', async (req, res) => {
   try {
     const { question } = req.body;
@@ -581,54 +538,6 @@ app.post('/dislike-post', async (req, res) => {
     }
   } catch (error) {
     console.error('Error in dislike-post route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
-
-
-app.get('/getapprovedposts', async (req, res) => {
-  try {
-    // Reference to the "posts" document in the "users" collection
-    const postsDocRef = admin.firestore().collection('users').doc('posts');
-
-    // Retrieve the posts document
-    const postsDoc = await postsDocRef.get();
-
-    if (postsDoc.exists) {
-      const postData = postsDoc.data();
-      
-      // Filter posts with approved status equals 1
-      const approvedPosts = postData.posts.filter(post => post.approved === 1);
-
-      res.json({ posts: approvedPosts });
-    } else {
-      res.json({ message: 'No posts found' });
-    }
-  } catch (error) {
-    console.error('Error in getposts route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
-});
-app.get('/getunapprovedposts', async (req, res) => {
-  try {
-    // Reference to the "posts" document in the "users" collection
-    const postsDocRef = admin.firestore().collection('users').doc('posts');
-
-    // Retrieve the posts document
-    const postsDoc = await postsDocRef.get();
-
-    if (postsDoc.exists) {
-      const postData = postsDoc.data();
-      
-      // Filter posts with approved status equals 0
-      const unapprovedPosts = postData.posts.filter(post => post.approved === 0);
-
-      res.json({ posts: unapprovedPosts });
-    } else {
-      res.json({ message: 'No posts found' });
-    }
-  } catch (error) {
-    console.error('Error in getunapprovedposts route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
@@ -1088,7 +997,6 @@ app.post('/hidePsychologistProfile', async (req, res) => {
   try {
     const { puid } = req.body;
 
-    // Update user data in Firestore to set visibility to false
     await admin.firestore().collection('psychologists').doc(puid).update({
       visibility: false
     });
@@ -1103,12 +1011,11 @@ app.post('/hidePsychologistProfile', async (req, res) => {
 app.post('/psychologistdetails', async (req, res) => {
   try {
     const { puid, name, gender, age, languages, area_of_expertise} = req.body;
-    // Update user data in Firestore (add or update the nickname)
     await admin.firestore().collection('psychologists').doc(puid).set(
       {
         name, gender, age, languages, area_of_expertise
       },
-      { merge: true } // This option ensures that existing data is not overwritten
+      { merge: true } 
     );
 
     res.json({ message: 'Psychologist details saved successfully', puid:puid });
@@ -1157,25 +1064,19 @@ app.post('/registerPsychologistNickname', async (req, res) => {
   }
 });
 
-//psychologist login route
 app.post('/psychologistLogin', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Retrieve psychologist by email using the admin SDK
     const psychologistRecord = await admin.auth().getUserByEmail(email);
     if (psychologistRecord) {
-      // Retrieve psychologist data from Firestore, assuming you have a 'psychologists' collection
       const psychologistDocRef = admin.firestore().collection('psychologists').doc(psychologistRecord.uid);
       const psychologistDoc = await psychologistDocRef.get();
       
       if (psychologistDoc.exists) {
-        // Check if the psychologist has a nickname
         
-        // Retrieve hashed password from Firestore
         const storedHashedPassword = psychologistDoc.data().password;
 
-        // Verify the entered password with the stored hashed password
         const isPasswordValid = await bcrypt.compare(password, storedHashedPassword);
 
         if (isPasswordValid) {
@@ -1613,7 +1514,8 @@ app.get('/getMessages/:conversationId', async (req, res) => {
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
-// POST method to store pictures with indexing using multer
+
+const bucket = admin.storage().bucket();
 app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
   try {
     const { buffer } = req.file;
@@ -1624,34 +1526,91 @@ app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
     await storageRef.save(buffer, { contentType: 'image/jpeg' });
 
     // Get the URL of the uploaded image
-    const imageUrl =  `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(
-      imageFilename
-    )}?alt=media`;
+    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(imageFilename)}?alt=media`;
 
-    // Get the current date
-    const currentDate = new Date();
+    // Get the reference to the dailyPictures document
+    const dailyPicturesRef = admin.firestore().collection('users').doc('dailyPictures');
 
-    // Create a new daily picture object
-    const dailyPicture = {
-      imageUrl,
-      date: currentDate,
-    };
+    // Get the current data of the dailyPictures document
+    const dailyPicturesDoc = await dailyPicturesRef.get();
+    let dailyPicturesData = dailyPicturesDoc.exists ? dailyPicturesDoc.data() : { pictures: [], currentIndex: 0 };
 
-    // Reference to the "daily_pictures" collection in the "users" collection
-    const dailyPicturesRef = admin.firestore().collection('users').doc().collection('daily_pictures');
+    // Ensure pictures field is initialized as an array
+    if (!Array.isArray(dailyPicturesData.pictures)) {
+      dailyPicturesData.pictures = [];
+    }
 
-    // Add the new daily picture to the daily pictures collection
-    await dailyPicturesRef.add(dailyPicture);
+    // Add the new picture to the pictures array with the index mapping
+    const newPicture = { imageUrl};
+    dailyPicturesData.pictures.push(newPicture);
 
-    res.json({ message: 'Daily picture created successfully' });
+    // Update the dailyPictures document in Firestore
+    await dailyPicturesRef.set(dailyPicturesData);
+
+    res.json({ message: 'Picture created successfully', picture: newPicture });
   } catch (error) {
     console.error('Error in create-daily-picture route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
-const bucket = admin.storage().bucket();
+app.get('/fetch-daily-picture', async (req, res) => {
+  try {
+    // Get the reference to the dailyPictures document
+    const dailyPicturesRef = admin.firestore().collection('users').doc('dailyPictures');
 
+    // Get the current data of the dailyPictures document
+    const dailyPicturesDoc = await dailyPicturesRef.get();
+    const dailyPicturesData = dailyPicturesDoc.exists ? dailyPicturesDoc.data() : { pictures: [], currentIndex: 0 };
 
+    // Ensure pictures field is initialized as an array
+    if (!Array.isArray(dailyPicturesData.pictures)) {
+      dailyPicturesData.pictures = [];
+    }
+
+    // Get the index of the next picture to fetch
+    const nextIndex = dailyPicturesData.currentIndex;
+
+    // Reset the index to 0 if all pictures have been fetched
+    if (nextIndex >= dailyPicturesData.pictures.length) {
+      dailyPicturesData.currentIndex = 0;
+      await dailyPicturesRef.set(dailyPicturesData); // Update the currentIndex in Firestore
+    }
+
+    // Get the image URL at the next index
+    const imageUrl = nextIndex < dailyPicturesData.pictures.length ?
+      dailyPicturesData.pictures[nextIndex].imageUrl : null;
+
+    res.json({ imageUrl });
+  } catch (error) {
+    console.error('Error in fetch-daily-picture route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+app.get('/get-newsfeed', async (req, res) => {
+  try {
+    // Reference to the "approvedPosts" collection
+    const postsCollectionRef = admin.firestore().collection('approvedPosts');
+
+    // Retrieve the current posts data
+    const postsQuerySnapshot = await postsCollectionRef.get();
+
+    if (!postsQuerySnapshot.empty) {
+      const postsData = [];
+      postsQuerySnapshot.forEach(doc => {
+        postsData.push(doc.data());
+      });
+
+      // Sort posts by date in descending order
+      const sortedPosts = postsData.sort((a, b) => b.date.toDate() - a.date.toDate());
+      res.json({ posts: sortedPosts });
+    } else {
+      res.status(404).json({ message: 'No posts found' });
+    }
+  } catch (error) {
+    console.error('Error in get-posts route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 // Define a route to handle file uploads
 app.post('/uploadaudio', upload.single('audio'), (req, res) => {
   if (!req.file) {
@@ -1685,78 +1644,6 @@ app.post('/uploadaudio', upload.single('audio'), (req, res) => {
   // Pipe the file data to the write stream
   uploadStream.end(file.buffer);
 });
-
-// const messaging = admin.messaging();
-
-// const sendPushNotification = async (token, text) => {
-//   try {
-//     const message = {
-//       data: {
-//         message: text
-//       },
-//       token: token
-//     };
-
-//     // Send the push notification
-//     await messaging.send(message);
-//   } catch (error) {
-//     console.error('Error sending push notification:', error);
-//     throw error; // Rethrow the error to handle it elsewhere if needed
-//   }
-// };
-
-// // Example usage
-// const token = 'fHYqG-anQ_alDk2Ri90n7s:APA91bHMGMc94LvB8awFp1jKhvcV4-Zql2ozR7lg8RzXFGjiYePeGINaOMpnUMzzc1eqU_oTe9i8sPVY7JKEizey5nVOrA-n9EYK2aimZWpqFuNN5FosPmpTyxDSFFI76lTvfdfBdpIY';
-// const text = 'Test notification message';
-// const from = 'Admin';
-// sendPushNotification(token, text, from)
-//   .then(() => {
-//     console.log('Push notification sent successfully');
-//   })
-//   .catch((error) => {
-//     console.error('Failed to send push notification:', error);
-//   });
-
-// app.post('/send-notification', (req, res) => {
-//   const message = {
-//     notification: {
-//       title: 'Welcome to Psycove Family',
-//       body: 'Welcome to Psycove Family! We are glad to have you with us.',
-//       image: 'https://tse4.mm.bing.net/th?id=OIP.JD-BAHN2ZBqPK0qswYJ7ugHaGJ&pid=Api&P=0&h=180',
-//     },
-//     token: deviceToken,
-//   };
-
-//   admin.messaging().send(message)
-//     .then((response) => {
-//       console.log('Successfully sent message:', response);
-//       res.status(200).send('Notification sent successfully');
-//     })
-//     .catch((error) => {
-//       console.error('Error sending message:', error);
-//       res.status(500).send('Error sending notification');
-//     });
-// });
-// app.post('/send-notification', (req, res) => {
-//   const { token, message } = req.body; 
-//   const payload = {
-//     notification: {
-//       title: 'Your Title',
-//       body: message,
-//     },
-//   };
-
-//   admin.messaging().sendToDevice(token, payload)
-//     .then((response) => {
-//       console.log('Notification sent successfully:', response);
-//       res.status(200).send('Notification sent successfully');
-//     })
-//     .catch((error) => {
-//       console.error('Error sending notification:', error);
-//       res.status(500).send('Error sending notification');
-//     });
-// });
-// POST method to store pictures with indexing using multer
 app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
   try {
     const { buffer } = req.file;
