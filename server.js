@@ -490,7 +490,7 @@ app.post('/like-post', async (req, res) => {
         try {
           // If the user hasn't liked the post yet, update the document
           await transaction.update(postRef, {
-            [likedBy.likes.${uid}]: true,
+            [likedBy.likes.$`{uid}`]: true,
             likesCount: likesCount + 1 // Increment the like count
           });
   
@@ -525,7 +525,7 @@ app.post('/dislike-post', async (req, res) => {
 
           // Remove the like for the user from the post document
           await transaction.update(postRef, {
-              [likedBy.likes.${uid}]: admin.firestore.FieldValue.delete(),
+              [likedBy.likes.$`{uid}`]: admin.firestore.FieldValue.delete(),
               likesCount: Math.max(likesCount - 1, 0) // Decrement the like count
           });
       });
