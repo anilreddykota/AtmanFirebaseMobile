@@ -466,79 +466,74 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
   }
 });
 app.post('/like-post', async (req, res) => {
-  try {
-    const { postId } = req.query; // Extract the postId from the query parameters
 
-    // Reference to the "posts" document in the "users" collection
-    const postsDocRef = admin.firestore().collection('users').doc('posts');
+  const postId = req.query.postId;
+  const uid = req.query.uid;
+  await admin.firestore().runTransaction(async transaction => {
+    const postRef = admin.firestore().collection('approvedPosts').doc(postId);
+    const doc = await transaction.get(postRef);
 
-    // Retrieve the posts document
-    const postsDoc = await postsDocRef.get();
+    if (doc && doc.data && typeof doc.data === 'function') {
+      const likesCount = doc.data()?.likesCount || 0;
+      // Use likesCount here...
+      ;
 
-    if (postsDoc.exists) {
-      const postData = postsDoc.data();
-      
-      // Find the post with the matching postId
-      const postIndex = postData.posts.findIndex(post => post.postId === postId);
+      const postSnapshot = await postRef.get();
+      const postData = postSnapshot.data();
 
-      if (postIndex !== -1) {
-        // Increment the likes for the post
-        postData.posts[postIndex].likes = (postData.posts[postIndex].likes || 0) + 1;
-
-        // Update the document with the incremented likes
-        await postsDocRef.update({
-          posts: postData.posts
-        });
-
-        res.json({ message: 'Post liked successfully', likes: postData.posts[postIndex].likes });
-      } else {
-        res.status(404).json({ message: 'Post not found' });
+      // Check if the user already liked the post
+      if (postData && postData.likedBy && postData.likedBy.likes && postData.likedBy.likes[uid]) {
+        console.log('User already liked this post');
+        // Send an error response
+        return res.status(200).json({ message: 'User already liked this post' });
+      }else{
+        try {
+          // If the user hasn't liked the post yet, update the document
+          await transaction.update(postRef, {
+            [likedBy.likes.${uid}]: true,
+            likesCount: likesCount + 1 // Increment the like count
+          });
+  
+  
+          // Send a success response
+          return res.json({ message: 'Post liked successfully' });
+        } catch (error) {
+          console.log('Error liking post:', error);
+          // Send an error response
+          return res.status(500).json({ error: 'Internal Server Error' });
+        }
       }
+
+     
     } else {
-      res.status(404).json({ message: 'No posts found' });
+      console.error('Invalid document or missing data.');
+      // Handle the case where doc is undefined or doesn't have a data() method
     }
-  } catch (error) {
-    console.error('Error in like-post route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
-  }
+
+  });
 });
-
-
 app.post('/dislike-post', async (req, res) => {
   try {
-    const { postId } = req.query; // Extract the postId from the query parameters
+    const postId = req.query.postId;
+    const uid = req.query.uid;
 
-    // Reference to the "posts" document in the "users" collection
-    const postsDocRef = admin.firestore().collection('users').doc('posts');
+      // Update the like status for the user in the post document
+      await admin.firestore().runTransaction(async transaction => {
+          const postRef = admin.firestore().collection('approvedPosts').doc(postId);
+          const doc = await transaction.get(postRef);
+          const likesCount = doc.data().likesCount || 0;
 
-    // Retrieve the posts document
-    const postsDoc = await postsDocRef.get();
+          // Remove the like for the user from the post document
+          await transaction.update(postRef, {
+              [likedBy.likes.${uid}]: admin.firestore.FieldValue.delete(),
+              likesCount: Math.max(likesCount - 1, 0) // Decrement the like count
+          });
+      });
 
-    if (postsDoc.exists) {
-      const postData = postsDoc.data();
-      
-      // Find the post with the matching postId
-      const postIndex = postData.posts.findIndex(post => post.postId === postId);
-
-      if (postIndex !== -1) {
-        // Decrement the likes for the post
-        postData.posts[postIndex].likes = Math.max((postData.posts[postIndex].likes || 0) - 1, 0);
-
-        // Update the document with the decremented likes
-        await postsDocRef.update({
-          posts: postData.posts
-        });
-
-        res.json({ message: 'Post disliked successfully', likes: postData.posts[postIndex].likes });
-      } else {
-        res.status(404).json({ message: 'Post not found' });
-      }
-    } else {
-      res.status(404).json({ message: 'No posts found' });
-    }
+      res.json({ message: 'Post disliked successfully' });
   } catch (error) {
-    console.error('Error in dislike-post route:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
+      console.error('Error disliking post:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
@@ -1541,8 +1536,11 @@ app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
     }
 
     // Add the new picture to the pictures array with the index mapping
-    const newPicture = { imageUrl};
+    const newPicture = { imageUrl };
     dailyPicturesData.pictures.push(newPicture);
+
+    // Increment the currentIndex
+    dailyPicturesData.currentIndex++;
 
     // Update the dailyPictures document in Firestore
     await dailyPicturesRef.set(dailyPicturesData);
@@ -1553,6 +1551,7 @@ app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 app.get('/fetch-daily-picture', async (req, res) => {
   try {
     // Get the reference to the dailyPictures document
@@ -1573,7 +1572,6 @@ app.get('/fetch-daily-picture', async (req, res) => {
     // Reset the index to 0 if all pictures have been fetched
     if (nextIndex >= dailyPicturesData.pictures.length) {
       dailyPicturesData.currentIndex = 0;
-      await dailyPicturesRef.set(dailyPicturesData); // Update the currentIndex in Firestore
     }
 
     // Get the image URL at the next index
@@ -1581,11 +1579,15 @@ app.get('/fetch-daily-picture', async (req, res) => {
       dailyPicturesData.pictures[nextIndex].imageUrl : null;
 
     res.json({ imageUrl });
+
+    // Increment the currentIndex for the next fetch
+    await dailyPicturesRef.update({ currentIndex: dailyPicturesData.currentIndex + 1 });
   } catch (error) {
     console.error('Error in fetch-daily-picture route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 app.get('/get-newsfeed', async (req, res) => {
   try {
     // Reference to the "approvedPosts" collection
@@ -1612,38 +1614,76 @@ app.get('/get-newsfeed', async (req, res) => {
   }
 });
 // Define a route to handle file uploads
-app.post('/uploadaudio', upload.single('audio'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).send('No file uploaded.');
-  }
+// app.post('/uploadaudio', upload.single('audio'), async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).send('No file uploaded.');
+//     }
 
-  const file = req.file;
+//     const file = req.file;
+    
+//     // Create a reference to the file in Firebase Storage
+//     const fileRef = bucket.file(file.originalname);
+    
+//     // Create a write stream to upload the file data
+//     const uploadStream = fileRef.createWriteStream({
+//       metadata: {
+//         contentType: file.mimetype,
+//       },
+//     });
+    
+//     // Handle errors during the upload
+//     uploadStream.on('error', (err) => {
+//       console.error('Error uploading file:', err);
+//       res.status(500).send('Error uploading file.');
+//     });
+    
+//     // Handle successful upload
+//     uploadStream.on('finish', async () => {
+//       console.log('File uploaded successfully.');
+      
+//       // Get the URL of the uploaded audio file
+//       const [url] = await fileRef.getSignedUrl({ action: 'read', expires: '01-01-2100' });
+      
+//       // Store the URL inside the users document
+//       await admin.firestore().collection('users').doc('your_user_id').update({
+//         audioUrl: url,
+//       });
+      
+//       res.status(200).send('File uploaded successfully.');
+//     });
+    
+//     // Pipe the file data to the write stream
+//     uploadStream.end(file.buffer);
+//   } catch (error) {
+//     console.error('Error in uploadaudio route:', error);
+//     res.status(500).json({ message: 'Internal Server Error' });
+//   }
+// });
+
+
+app.get('/getaudio/:filename', (req, res) => {
+  const filename = req.params.filename;
 
   // Create a reference to the file in Firebase Storage
-  const fileRef = bucket.file(file.originalname);
+  const fileRef = bucket.file(filename);
 
-  // Create a write stream to upload the file data
-  const uploadStream = fileRef.createWriteStream({
-    metadata: {
-      contentType: file.mimetype,
-    },
+  // Create a read stream to download the file data
+  const downloadStream = fileRef.createReadStream();
+
+  // Handle errors during the download
+  downloadStream.on('error', (err) => {
+    console.error('Error downloading file:', err);
+    res.status(500).send('Error downloading file.');
   });
 
-  // Handle errors during the upload
-  uploadStream.on('error', (err) => {
-    console.error('Error uploading file:', err);
-    res.status(500).send('Error uploading file.');
-  });
+  // Set the appropriate content type for audio files
+  res.set('Content-Type', 'audio/mpeg');
 
-  // Handle successful upload
-  uploadStream.on('finish', () => {
-    console.log('File uploaded successfully.');
-    res.status(200).send('File uploaded successfully.');
-  });
-
-  // Pipe the file data to the write stream
-  uploadStream.end(file.buffer);
+  // Pipe the file data to the response
+  downloadStream.pipe(res);
 });
+
 app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
   try {
     const { buffer } = req.file;
