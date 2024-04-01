@@ -32,7 +32,6 @@ async function authenticateUser(req, res, next) {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'Unauthorized - Missing token' });
   try {
-    // Verify the JWT token against Firebase Authentication
     const decodedToken = await admin.auth().verifyIdToken(token);
     
     // Add the user UID to the request object for further processing
@@ -217,7 +216,6 @@ app.post('/UserLogin', async (req, res) => {
         const isPasswordValid = await bcrypt.compare(password, storedHashedPassword);
 
         if (isPasswordValid) {
-          // Generate JWT token with user UID and email
           const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'atmanapplication', {
 
           });
@@ -917,7 +915,6 @@ async function authenticatePsychologist(req, res, next) {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'Unauthorized - Missing token' });
   try {
-    // Verify the JWT token against Firebase Authentication
     const decodedToken = await admin.auth().verifyIdToken(token);
     
     // Add the user UID to the request object for further processing
