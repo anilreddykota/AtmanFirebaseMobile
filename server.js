@@ -465,7 +465,7 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
 });
 app.post('/like-post', async (req, res) => {
 
-  const postId = req.query.postId;
+  const postId = req.query.postid;
   const uid = req.query.uid;
   await admin.firestore().runTransaction(async transaction => {
     const postRef = admin.firestore().collection('approvedPosts').doc(postId);
@@ -512,7 +512,7 @@ app.post('/like-post', async (req, res) => {
 });
 app.post('/dislike-post', async (req, res) => {
   try {
-    const postId = req.query.postId;
+    const postId = req.query.postid;
     const uid = req.query.uid;
 
       // Update the like status for the user in the post document
