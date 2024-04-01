@@ -467,6 +467,7 @@ app.post('/like-post', async (req, res) => {
 
   const postId = req.query.postid;
   const uid = req.query.uid;
+  
   await admin.firestore().runTransaction(async transaction => {
     const postRef = admin.firestore().collection('approvedPosts').doc(postId);
     const doc = await transaction.get(postRef);
