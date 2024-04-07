@@ -1345,29 +1345,45 @@ app.post('/getAppointmentsByDoctor', async (req, res) => {
       return res.status(400).json({ message: 'Invalid request. Missing puid parameter in the request body.' });
     }
 
-    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
-    const approvedAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("approved");
+    const psychologistRef = admin.firestore().collection('psychologists').doc(puid);
+    const [pendingAppointmentsSnapshot, approvedAppointmentsSnapshot, addedAppointmentsSnapshot] = await Promise.all([
+      psychologistRef.collection("pending").doc("pending").get(),
+      psychologistRef.collection("approved").doc("approved").get(),
+      psychologistRef.collection("approved").doc("addedbyPsych").get(),
+    ]);
 
-    const pendingAppointmentsData = (await pendingAppointmentsRef.get()).data() || { bookings: [] };
-    const approvedAppointmentsData = (await approvedAppointmentsRef.get()).data() || { bookings: [] };
+    const pendingAppointmentsData = pendingAppointmentsSnapshot.data() || { bookings: [] };
+    const approvedAppointmentsData = approvedAppointmentsSnapshot.data() || { bookings: [] };
 
-    const pendingAppointments = await Promise.all(pendingAppointmentsData.bookings.map(async (appointment) => {
-      const userDetailsRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(appointment.uid);
+    const fetchAppointmentDetails = async (appointments) => {
+      return Promise.all(appointments.map(async (appointment) => {
+        const userDetailsRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(appointment.uid);
+        const userDetailsSnapshot = await userDetailsRef.get();
+        const userDetails = userDetailsSnapshot.data();
+        return { ...appointment, userDetails };
+      }));
+    };
+
+    const [pendingAppointments, approvedAppointments] = await Promise.all([
+      fetchAppointmentDetails(pendingAppointmentsData.bookings),
+      fetchAppointmentDetails(approvedAppointmentsData.bookings)
+    ]);
+
+    // Fetch details for appointments added by psychologist
+    const addedAppointmentsData = [];
+    const uids = addedAppointmentsSnapshot.data().uids;
+    for (const uid of uids) {
+      const userDetailsRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid);
       const userDetailsSnapshot = await userDetailsRef.get();
       const userDetails = userDetailsSnapshot.data();
-      return { ...appointment, userDetails };
-    }));
-
-    const approvedAppointments = await Promise.all(approvedAppointmentsData.bookings.map(async (appointment) => {
-      const userDetailsRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(appointment.uid);
-      const userDetailsSnapshot = await userDetailsRef.get();
-      const userDetails = userDetailsSnapshot.data();
-      return { ...appointment, userDetails };
-    }));
+      const appointment = {uid: uid,}
+      addedAppointmentsData.push({...appointment, userDetails});
+    }
 
     res.json({
       pendingAppointments,
-      approvedAppointments
+      approvedAppointments,
+      addedAppointmentsData
     });
   } catch (error) {
     console.error('Error retrieving appointments:', error);
@@ -1376,10 +1392,12 @@ app.post('/getAppointmentsByDoctor', async (req, res) => {
 });
 
 
+
+
 app.post('/addAppointmentToDoctorList', async (req, res) => {
   try {
     const { puid, nickname } = req.body;
-
+console.log(puid, nickname);
     // Check if both puid and nickname are provided
     if (!puid || !nickname) {
       return res.status(400).json({ message: 'Invalid request. Missing puid or nickname parameter in the request body.' });
@@ -1395,7 +1413,7 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
       .get();
 
     if (userSnapshot.empty) {
-      return res.status(404).json({ message: 'User with the provided nickname not found.' });
+      return res.json({ message: 'User with the provided nickname not found.' });
     }
 
     // Assuming there's only one user with the provided nickname, get their UID
@@ -1410,7 +1428,7 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
 
     // Check if the UID already exists in the array
     if (existingData && existingData.uids && existingData.uids.includes(uid)) {
-      return res.status(400).json({ message: 'Appointment with the same client already exists.' });
+      return res.json({ message: 'Appointment with the same client already exists.' });
     }
 
     // If the document already exists, update the array of UIDs
@@ -1790,6 +1808,31 @@ app.get('/get-newsfeed', async (req, res) => {
         userDetails: userDetailsSnapshots[index].exists ? userDetailsSnapshots[index].data() : null
       }));
 
+      // Check if any user details were not found in "details" collection
+      const unresolvedUserDetailsIndices = userDetailsSnapshots.reduce((indices, snapshot, index) => {
+        if (!snapshot.exists) {
+          indices.push(index);
+        }
+        return indices;
+      }, []);
+
+      // Fetch user details from "psychologists" collection for unresolved user IDs
+      const psychologistsPromises = unresolvedUserDetailsIndices.map(index => {
+        const postData = mergedPostsData[index];
+        return admin.firestore().collection('psychologists').doc(postData.uid).get();
+      });
+
+      // Wait for all psychologist details promises to resolve
+      const psychologistsSnapshots = await Promise.all(psychologistsPromises);
+
+      // Merge psychologist details into post data for unresolved user IDs
+      psychologistsSnapshots.forEach((snapshot, index) => {
+        const postData = mergedPostsData[unresolvedUserDetailsIndices[index]];
+        if (snapshot.exists) {
+          postData.userDetails = snapshot.data();
+        }
+      });
+
       // Sort posts by date in descending order
       const sortedPosts = mergedPostsData.sort((a, b) => b.date.toDate() - a.date.toDate());
       res.json({ posts: sortedPosts });
@@ -1800,8 +1843,8 @@ app.get('/get-newsfeed', async (req, res) => {
     console.error('Error in get-posts route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
-
 });
+
 // Define a route to handle file uploads
 // app.post('/uploadaudio', upload.single('audio'), async (req, res) => {
 //   try {
