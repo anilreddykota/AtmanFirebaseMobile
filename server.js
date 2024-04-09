@@ -205,6 +205,21 @@ app.post('/protected-route-user', async (req, res) => {
     res.status(401).json({ message: 'Unauthorized - Invalid token' });
   }
 });
+app.post('/protected-route-doctor', async (req, res) => {
+  try {
+    const { token, puid } = req.body;
+    if (!token) return res.json({ message: 'Unauthorized - Missing token' });
+    const snapshot = await admin.firestore().collection('psychologists').doc(puid).get();
+    if (snapshot.data()?.token === token) {
+      console.log("verified token -p");
+    } else {
+      res.json({ message: "send-to-logout" })
+    }
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    res.status(401).json({ message: 'Unauthorized - Invalid token' });
+  }
+});
 
 
 // login route
@@ -1201,25 +1216,31 @@ app.post('/psychologistLogin', async (req, res) => {
 
 const psychologistTokenBlacklist = [];
 //logout route
-app.post('/psychologistLogout', (req, res) => {
+app.post('/psychologistLogout', async(req, res) => {
   try {
     // Extract token from the Authorization header
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const { puid } = req.body;
+    console.log(puid);
+    const userDocRef = admin.firestore().collection('psychologists').doc(puid);
 
+    // Get the user document data
+   
+    const userDocSnapshot = await userDocRef.get();
     // Check if the token is in the blacklist
-    if (token && psychologistTokenBlacklist.includes(token)) {
-      res.status(401).json({ message: 'Token has already been revoked' });
-    } else {
-      // Add the token to the blacklist (for demonstration purposes)
-      psychologistTokenBlacklist.push(token);
-
-      res.json({ message: 'Logout successful' });
+    if (!userDocSnapshot.exists) {
+      res.status(404).json({ message: 'User not found' });
+      return;
     }
+    await userDocRef.update({ token: admin.firestore.FieldValue.delete() });
+    res.json({ message: 'Logout successful' });
+
   } catch (error) {
     console.error('Error during logout:', error);
     res.status(500).json({ message: 'Internal Server Error' });
+
   }
 });
+
 //book Appointment
 app.post('/bookAppointment', async (req, res) => {
   try {
@@ -1612,16 +1633,7 @@ app.get('/getMessages/:conversationId', async (req, res) => {
 
 
 
-app.get('/api/messages', async (req, res) => {
-  try {
-    const messagesSnapshot = await admin.firestore().collection('messages').orderBy('timestamp').get();
-    const messagesData = messagesSnapshot.docs.map((doc) => doc.data());
-    res.json(messagesData);
-  } catch (error) {
-    console.error('Error fetching messages:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
+
 
 const bucket = admin.storage().bucket();
 app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
@@ -1844,6 +1856,116 @@ app.get('/get-newsfeed', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.post('/get-analysis-of-student', async (req, res) => {
+  try {
+    const { uid } = req.body;
+console.log(uid);
+    // Assuming your Firestore structure is /users/userDetails/details/{userId}/mood/{date}
+    const moodRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('mood');
+    const snapshot = await moodRef.get();
+
+    if (snapshot.empty) {
+      return res.json({message:"No mood data found for the specified user."});
+    }
+    let moodData = [];
+    let moodDate = [];
+    snapshot.forEach(doc => {
+      moodData.push({data: doc.data()});
+      moodDate.push(doc.id);
+    });
+    // Perform analytics on moodData
+    const analyticsResult = performAnalytics(moodData);
+    // Send the analytics result
+    const longestStreak = calculateStreakWithDates(moodDate, true);
+    const currentStreak = calculateStreakWithDates(moodDate, false);
+
+    // Send the analytics result along with streak information
+    res.json({ analyticsResult, moodDate, longestStreak, currentStreak });
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).send('Error fetching analytics');
+  }
+});
+
+function performAnalytics(moodData) {
+
+var moodScore = [];
+  const labelMap = {
+     "terrible":1,
+     "sad":2,
+     "bad":3,
+     "amazing":5,
+     "happy":4
+    };
+     for(i of moodData){
+      moodScore.push(labelMap[i.data.answer]);
+
+     }
+
+  return {
+    averageMoodScore: calculateAverageMoodScore(moodScore),
+    moodTrends: analyzeMoodTrends(moodScore),
+    moodScore : moodScore
+    // Add more analytics as needed
+  };
+}
+function calculateAverageMoodScore(moodData) {
+  // Calculate average mood score from moodData
+  // Example:
+  const sum = moodData.reduce((acc, score) => acc + score, 0);
+  return sum / moodData.length;
+}
+
+function analyzeMoodTrends(moodData) {
+  // Analyze mood trends from moodData
+  // Example:
+  // Your trend analysis logic here
+  return 'Mood trends analysis result';
+}
+function calculateStreakWithDates(dates, isLongest) {
+  // Convert dates to Date objects for easier comparison
+  const sortedDates = dates.map(date => new Date(date)).sort((a, b) => a - b);
+  let streak = 1; // Start streak with 1 since the first date always counts as part of the streak
+  let longestStreak = 1;
+  let streakDates = [sortedDates[0]]; // Start the streak dates with the first date
+  let longestStreakDates = [sortedDates[0]];
+
+  for (let i = 1; i < sortedDates.length; i++) {
+    const currentDate = sortedDates[i];
+    const previousDate = sortedDates[i - 1];
+    // Calculate the difference in days between current and previous date
+    const diffInDays = Math.round((currentDate - previousDate) / (1000 * 60 * 60 * 24));
+
+    if (diffInDays === 1) {
+      streak++;
+      streakDates.push(currentDate);
+    } else {
+      if (streak > longestStreak) {
+        longestStreak = streak;
+        longestStreakDates = streakDates;
+      }
+      streak = 1; // Reset streak count
+      streakDates = [currentDate]; // Start new streak with current date
+    }
+  }
+
+  // Check if the last streak is the longest
+  if (streak > longestStreak) {
+    longestStreak = streak;
+    longestStreakDates = streakDates;
+  }
+
+  if (isLongest) {
+    return { length: longestStreak, dates: longestStreakDates };
+  } else {
+    return { length: streak, dates: streakDates };
+  }
+}
+
+
+
+
+
 
 // Define a route to handle file uploads
 // app.post('/uploadaudio', upload.single('audio'), async (req, res) => {
@@ -2099,7 +2221,7 @@ const io = require("socket.io")(server, {
     callback(null, true);
   },
   cors: {
-    origin: 'http://127.0.0.1:5501',
+    origin: ['http://127.0.0.1:5501','https://psyshell-portal.vercel.app',],
     methods: ['GET', 'POST'],
   }
 });
