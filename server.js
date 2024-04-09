@@ -101,6 +101,63 @@ app.post('/registerUser', async (req, res) => {
     return res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
+app.post('/registerUseronweb', async (req, res) => {
+  try {
+    const { email, password, age, nickname } = req.body;
+    console.log(age + "-< age \n" + "nickname " + nickname);
+
+    // Check if user exists
+    let existingUserRecord;
+    try {
+      existingUserRecord = await admin.auth().getUserByEmail(email);
+    } catch (error) {
+      // If no user record found, proceed with registration
+      if (error.code !== 'auth/user-not-found') {
+        throw error; // Rethrow other errors
+      }
+    }
+
+    if (existingUserRecord) {
+      // User already exists
+      const userData = existingUserRecord.toJSON();
+      if (!userData || !userData.nickname) {
+        // User doesn't have a nickname, update details and re-register
+        try {
+          await updateUserAndReRegisterweb(existingUserRecord.uid, email, password, nickname, age);
+        } catch (error) {
+          return res.json({ message: error.message })
+        }
+
+        return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
+      } else {
+        // User already registered with a nickname
+        return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
+      }
+    } else {
+      // User doesn't exist, create a new user
+      const userRecord = await admin.auth().createUser({
+        email,
+        password: await bcrypt.hash(password, 15),
+        age,
+        nickname,
+      });
+
+      // Store user details in Firestore
+      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set({
+        email,
+        password: userRecord.passwordHash,
+        age,
+        nickname,
+      });
+
+      // Respond with a success message and user UID
+      return res.json({ message: 'Registration successful', uid: userRecord.uid });
+    }
+  } catch (error) {
+    console.error('Error in registration:', error);
+    return res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+});
 
 async function updateUserAndReRegister(uid, email, password) {
   try {
