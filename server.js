@@ -103,7 +103,7 @@ app.post('/registerUser', async (req, res) => {
 });
 app.post('/registerUseronweb', async (req, res) => {
   try {
-    const { email, password, age, nickname } = req.body;
+    const { email, password, age, nickname, college } = req.body;
     console.log(age + "-< age \n" + "nickname " + nickname);
 
     // Check if user exists
@@ -113,7 +113,7 @@ app.post('/registerUseronweb', async (req, res) => {
     } catch (error) {
       // If no user record found, proceed with registration
       if (error.code !== 'auth/user-not-found') {
-        throw error; // Rethrow other errors
+        console.log(error.code);
       }
     }
 
@@ -123,7 +123,7 @@ app.post('/registerUseronweb', async (req, res) => {
       if (!userData || !userData.nickname) {
         // User doesn't have a nickname, update details and re-register
         try {
-          await updateUserAndReRegisterweb(existingUserRecord.uid, email, password, nickname, age);
+          await updateUserAndReRegisterweb(existingUserRecord.uid, email, password, nickname, age, college);
         } catch (error) {
           return res.json({ message: error.message })
         }
@@ -131,7 +131,7 @@ app.post('/registerUseronweb', async (req, res) => {
         return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
       } else {
         // User already registered with a nickname
-        return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
+        return res.json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
       }
     } else {
       // User doesn't exist, create a new user
@@ -140,6 +140,7 @@ app.post('/registerUseronweb', async (req, res) => {
         password: await bcrypt.hash(password, 15),
         age,
         nickname,
+        college
       });
 
       // Store user details in Firestore
@@ -148,6 +149,7 @@ app.post('/registerUseronweb', async (req, res) => {
         password: userRecord.passwordHash,
         age,
         nickname,
+        college
       });
 
       // Respond with a success message and user UID
@@ -158,7 +160,7 @@ app.post('/registerUseronweb', async (req, res) => {
     return res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 });
-async function updateUserAndReRegisterweb(uid, email, password, nickname, age) {
+async function updateUserAndReRegisterweb(uid, email, password, nickname, age, college) {
   try {
     // Check if user already has a nickname
     const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).get();
@@ -185,6 +187,7 @@ async function updateUserAndReRegisterweb(uid, email, password, nickname, age) {
       password: hashedPassword,
       nickname,
       age,
+      college
     });
 
     // Return success message
@@ -351,10 +354,14 @@ app.post('/UserLogin', async (req, res) => {
           const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, 'atmanapplication', {
 
           });
+          await userDocRef.update({ lastLogin: admin.firestore.FieldValue.serverTimestamp() });
+
+          // Log user login activity
+          await logUserActivity(userRecord.uid, 'login');
           await userDocRef.update({ token: token })
 
           // Include the token in the response header and respond with user data
-          res.header('Authorization', `Bearer ${token}`); 
+          res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
             userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname, token: token },
@@ -377,6 +384,55 @@ app.post('/UserLogin', async (req, res) => {
     } else {
       res.json({ message: 'Internal Server Error' });
     }
+  }
+});
+
+async function logUserActivity(uid, activity) {
+  try {
+    const activityLogRef = admin.firestore().collection('userActivity').doc(uid).collection('activityLog');
+    await activityLogRef.add({
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      activity
+    });
+  } catch (error) {
+    console.error('Error logging user activity:', error);
+  }
+}
+// Route to get user activity and last login
+app.post('/user/activity', async (req, res) => {
+  try {
+    const { uid } = req.body;
+
+    // Ensure that the uid is provided in the request body
+    if (!uid) {
+      return res.status(400).json({ message: 'User ID (uid) is required in the request body' });
+    }
+
+    // Retrieve user activity log
+    const activityLogRef = admin.firestore().collection('userActivity').doc(uid).collection('activityLog');
+    const activitySnapshot = await activityLogRef.orderBy('timestamp', 'desc').get();
+    const activityLog = [];
+
+    activitySnapshot.forEach(doc => {
+      activityLog.push({
+        id: doc.id,
+        timestamp: doc.data().timestamp.toDate(),
+        activity: doc.data().activity
+      });
+    });
+
+    // Retrieve last login timestamp from user document
+    const userDocRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid);
+    const userDoc = await userDocRef.get();
+    const lastLogin = userDoc.exists ? userDoc.data().lastLogin.toDate() : null;
+
+    res.json({
+      lastLogin,
+      activityLog
+    });
+  } catch (error) {
+    console.error('Error fetching user activity:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
@@ -406,9 +462,10 @@ app.post('/logout-user', async (req, res) => {
     // Remove the token from the user document
     await userDocRef.update({ token: admin.firestore.FieldValue.delete() });
 
-  
-      res.json({ message: 'Logout successful' });
-  
+    await logUserActivity(uid, 'logout');
+
+    res.json({ message: 'Logout successful' });
+
   } catch (error) {
     console.error('Error during logout:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -791,6 +848,7 @@ app.post('/submit-daily-mood', async (req, res) => {
     await answerRef.set({
       answer
     }, { merge: true }); // Merge with existing data if document already exists
+    await logUserActivity(uid, 'answered mood');
 
     res.json({ message: 'Daily mood tracked successfully', answerId: answerRef.id });
   } catch (error) {
@@ -912,6 +970,7 @@ app.post('/submit-daily-journal-answer', async (req, res) => {
       answer,
       date: currentDate,
     }, { merge: true }); // Merge with existing data if document already exists
+    await logUserActivity(uid, 'answered daily journal');
 
     res.json({ message: 'Daily journal answer submitted successfully', answerId: answerRef.id });
   } catch (error) {
@@ -1038,6 +1097,7 @@ app.post('/change-password', async (req, res) => {
     await admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).update({
       password: newHashedPassword,
     });
+    await logUserActivity(uid, 'changed password');
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -1282,6 +1342,7 @@ app.post('/psychologistLogin', async (req, res) => {
 
           // Include the token in the response header and respond with psychologist data
           res.header('Authorization', `Bearer ${token}`);
+          await logUserActivity(psychologistRecord.uid, "logged in")
           res.json({
             message: 'Login successful',
             userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistDoc.data().nickname, token: token },
@@ -1312,7 +1373,7 @@ app.post('/psychologistLogin', async (req, res) => {
 
 const psychologistTokenBlacklist = [];
 //logout route
-app.post('/psychologistLogout', async(req, res) => {
+app.post('/psychologistLogout', async (req, res) => {
   try {
     // Extract token from the Authorization header
     const { puid } = req.body;
@@ -1320,7 +1381,7 @@ app.post('/psychologistLogout', async(req, res) => {
     const userDocRef = admin.firestore().collection('psychologists').doc(puid);
 
     // Get the user document data
-   
+
     const userDocSnapshot = await userDocRef.get();
     // Check if the token is in the blacklist
     if (!userDocSnapshot.exists) {
@@ -1328,6 +1389,8 @@ app.post('/psychologistLogout', async(req, res) => {
       return;
     }
     await userDocRef.update({ token: admin.firestore.FieldValue.delete() });
+    await logUserActivity(puid, 'logout successfully');
+
     res.json({ message: 'Logout successful' });
 
   } catch (error) {
@@ -1493,8 +1556,8 @@ app.post('/getAppointmentsByDoctor', async (req, res) => {
       const userDetailsRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid);
       const userDetailsSnapshot = await userDetailsRef.get();
       const userDetails = userDetailsSnapshot.data();
-      const appointment = {uid: uid,}
-      addedAppointmentsData.push({...appointment, userDetails});
+      const appointment = { uid: uid, }
+      addedAppointmentsData.push({ ...appointment, userDetails });
     }
 
     res.json({
@@ -1514,7 +1577,7 @@ app.post('/getAppointmentsByDoctor', async (req, res) => {
 app.post('/addAppointmentToDoctorList', async (req, res) => {
   try {
     const { puid, nickname } = req.body;
-console.log(puid, nickname);
+    console.log(puid, nickname);
     // Check if both puid and nickname are provided
     if (!puid || !nickname) {
       return res.status(400).json({ message: 'Invalid request. Missing puid or nickname parameter in the request body.' });
@@ -1840,6 +1903,7 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
 
     // Add the new post document to the "pending" subcollection
     await pendingPostsCollectionRef.add(post);
+    await logUserActivity(uid, 'created a new post');
 
     res.json({ message: 'Post created successfully' });
   } catch (error) {
@@ -1886,87 +1950,105 @@ app.get('/get-posts', async (req, res) => {
 
 app.get('/get-newsfeed', async (req, res) => {
   try {
-    // Reference to the "approvedPosts" collection
     const postsCollectionRef = admin.firestore().collection('approvedPosts');
 
-    // Retrieve the current posts data
     const postsQuerySnapshot = await postsCollectionRef.get();
 
     if (!postsQuerySnapshot.empty) {
       const postsData = [];
       const userDetailsPromises = []; // Array to hold promises for fetching user details
+      const commentsPromises = []; // Array to hold promises for fetching comments
 
       postsQuerySnapshot.forEach(doc => {
         const postData = doc.data();
-        const userDetailsPromise = admin.firestore().collection('users').doc("userDetails").collection("details").doc(postData?.uid).get();
+        const userDetailsPromise = admin.firestore().collection('users').doc('userDetails').collection('details').doc(postData.uid).get()
+          .then(userSnapshot => {
+            if (userSnapshot.exists) {
+              return userSnapshot.data();
+            } else {
+              // If user details not found, try fetching from psychologists collection
+              return admin.firestore().collection('psychologists').doc(postData.uid).get()
+                .then(psychologistSnapshot => {
+                  if (psychologistSnapshot.exists) {
+                    return psychologistSnapshot.data();
+                  } else {
+                    return null; // Neither user nor psychologist found
+                  }
+                });
+            }
+          });
         userDetailsPromises.push(userDetailsPromise);
+
+        const commentsPromise = admin.firestore().collection('approvedPosts').doc(doc.id).collection('comments').get(); // Fetch comments for each post
+        commentsPromises.push(commentsPromise);
 
         postsData.push({
           ...postData,
-          id: doc.id // Add post ID to the post data
+          id: doc.id
         });
       });
 
-      // Wait for all user details promises to resolve
       const userDetailsSnapshots = await Promise.all(userDetailsPromises);
+      const commentsSnapshots = await Promise.all(commentsPromises);
 
-      // Merge user details into post data
-      const mergedPostsData = postsData.map((postData, index) => ({
-        ...postData,
-        userDetails: userDetailsSnapshots[index].exists ? userDetailsSnapshots[index].data() : null
+      const mergedPostsData = await Promise.all(postsData.map(async (postData, index) => {
+        const userDetails = userDetailsSnapshots[index];
+        const comments = await Promise.all(commentsSnapshots[index].docs.map(async commentDoc => {
+          const commentData = commentDoc.data();
+          let commenterDetails = null;
+
+          const psychologistSnapshot = await admin.firestore().collection('psychologists').doc(commentData.commenterUID).get();
+          const userSnapshot = await admin.firestore().collection('users').doc(commentData.commenterUID).get();
+
+          if (psychologistSnapshot.exists) {
+            commenterDetails = psychologistSnapshot.data();
+          } else if (userSnapshot.exists) {
+            commenterDetails = userSnapshot.data();
+          }
+
+          return {
+            id: commentDoc.id,
+            ...commentData,
+            commenterDetails: commenterDetails
+          };
+        }));
+
+        return {
+          ...postData,
+          userDetails: userDetails,
+          comments: comments
+        };
       }));
 
-      // Check if any user details were not found in "details" collection
-      const unresolvedUserDetailsIndices = userDetailsSnapshots.reduce((indices, snapshot, index) => {
-        if (!snapshot.exists) {
-          indices.push(index);
-        }
-        return indices;
-      }, []);
-
-      // Fetch user details from "psychologists" collection for unresolved user IDs
-      const psychologistsPromises = unresolvedUserDetailsIndices.map(index => {
-        const postData = mergedPostsData[index];
-        return admin.firestore().collection('psychologists').doc(postData.uid).get();
-      });
-
-      // Wait for all psychologist details promises to resolve
-      const psychologistsSnapshots = await Promise.all(psychologistsPromises);
-
-      // Merge psychologist details into post data for unresolved user IDs
-      psychologistsSnapshots.forEach((snapshot, index) => {
-        const postData = mergedPostsData[unresolvedUserDetailsIndices[index]];
-        if (snapshot.exists) {
-          postData.userDetails = snapshot.data();
-        }
-      });
-
-      // Sort posts by date in descending order
       const sortedPosts = mergedPostsData.sort((a, b) => b.date.toDate() - a.date.toDate());
       res.json({ posts: sortedPosts });
     } else {
       res.status(404).json({ message: 'No posts found' });
     }
   } catch (error) {
-    console.error('Error in get-posts route:', error);
+    console.error('Error in get-newsfeed route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+
+
+
 app.post('/get-analysis-of-student', async (req, res) => {
   try {
     const { uid } = req.body;
-console.log(uid);
+    console.log(uid);
     // Assuming your Firestore structure is /users/userDetails/details/{userId}/mood/{date}
     const moodRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('mood');
     const snapshot = await moodRef.get();
 
     if (snapshot.empty) {
-      return res.json({message:"No mood data found for the specified user."});
+      return res.json({ message: "No mood data found for the specified user." });
     }
     let moodData = [];
     let moodDate = [];
     snapshot.forEach(doc => {
-      moodData.push({data: doc.data()});
+      moodData.push({ data: doc.data() });
       moodDate.push(doc.id);
     });
     // Perform analytics on moodData
@@ -1985,23 +2067,23 @@ console.log(uid);
 
 function performAnalytics(moodData) {
 
-var moodScore = [];
+  var moodScore = [];
   const labelMap = {
-     "terrible":1,
-     "sad":2,
-     "bad":3,
-     "amazing":5,
-     "happy":4
-    };
-     for(i of moodData){
-      moodScore.push(labelMap[i.data.answer]);
+    "terrible": 1,
+    "sad": 2,
+    "bad": 3,
+    "amazing": 5,
+    "happy": 4
+  };
+  for (i of moodData) {
+    moodScore.push(labelMap[i.data.answer]);
 
-     }
+  }
 
   return {
     averageMoodScore: calculateAverageMoodScore(moodScore),
     moodTrends: analyzeMoodTrends(moodScore),
-    moodScore : moodScore
+    moodScore: moodScore
     // Add more analytics as needed
   };
 }
@@ -2223,6 +2305,7 @@ app.post('/admin/approvepost', async (req, res) => {
         postId,
         ...pendingPostData,
       });
+      await logUserActivity(pendingPostData.uid, 'your post has been approved by admin');
 
       // Delete the pending post
       await pendingPostDoc.ref.delete();
@@ -2258,6 +2341,7 @@ app.post('/admin/deletePost', async (req, res) => {
         // Delete the pending post
         await pendingPostDoc.ref.delete();
 
+        await logUserActivity(pendingPostData.uid, 'your post has been deleted by admin');
 
         res.status(200).json({ success: true, postId, message: 'Pending post deleted as it was not approved' });
       } else {
@@ -2317,7 +2401,7 @@ const io = require("socket.io")(server, {
     callback(null, true);
   },
   cors: {
-    origin: ['http://127.0.0.1:5501','https://psyshell-portal.vercel.app',],
+    origin: ['http://127.0.0.1:5501', 'https://psyshell-portal.vercel.app',],
     methods: ['GET', 'POST'],
   }
 });
@@ -2548,12 +2632,134 @@ app.get("/api/record/:uid", async (req, res) => {
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
+
+app.post('/createcollege', async (req, res) => {
+  try {
+    const { collegename, email, password, collegecode } = req.body;
+
+    // Hash the password before storing
+    const hashedPassword = await bcrypt.hash(password, 15);
+
+    // Store college data as a separate document under 'colleges' collection
+    await admin.firestore().collection('colleges').doc('collegedata').collection('list').doc().set({
+      collegecode,
+      collegename,
+      email,
+      password: hashedPassword // Store the hashed password
+    });
+
+    // Update colleges list with college name and code mapping
+    await admin.firestore().collection('colleges').doc("collegeslist").update({
+      [collegecode]: collegename // Assuming collegecode is unique
+    });
+
+    res.status(200).send("College created successfully.");
+  } catch (error) {
+    console.error("Error creating college:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+app.post('/collegelogin', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    // Check if email and password are provided
+    if (!email || !password) {
+      return res.json({ message: "Email and password are required." });
+    }
+
+    // Retrieve college data from Firestore using email
+    const collegeSnapshot = await admin.firestore().collection('colleges').doc("collegedata").collection('list').where('email', '==', email).get();
+
+    if (collegeSnapshot.empty) {
+      return res.json({ message: "College not found." });
+    }
+
+    const collegeData = collegeSnapshot.docs[0].data();
+
+    // Compare the provided password with the hashed password stored in the database
+    const passwordMatch = await bcrypt.compare(password, collegeData.password);
+
+    if (!passwordMatch) {
+      return res.json({ message: "Invalid password." });
+    }
+
+    // If the credentials are correct, you can return some college data or a success message
+    res.json({ message: "Login successful", collegeData });
+
+  } catch (error) {
+    console.error("Error logging in:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+app.get('/listcolleges', async (req, res) => {
+  try {
+    const collegesSnapshot = await admin.firestore().collection('colleges').doc("collegeslist").get();
+
+    if (!collegesSnapshot.exists) {
+      return res.json({ message: "No colleges found." });
+    }
+
+    const collegesData = collegesSnapshot.data();
+
+    // Extract college names and codes from the snapshot data
+    const collegesList = Object.keys(collegesData).map(collegecode => ({
+      collegecode,
+      collegename: collegesData[collegecode]
+    }));
+
+    res.json({ list: collegesList });
+  } catch (error) {
+    console.error("Error retrieving colleges:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+app.post('/doctor/addcomment', async (req, res) => {
+  try {
+    const { comment, postid, puid } = req.body;
+
+    // Get the post document reference
+    const postRef = admin.firestore().collection('approvedPosts').doc(postid);
+
+    // Get the current timestamp
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+
+    // Add the comment to the post document with additional data
+    await postRef.collection('comments').add({
+      comment: comment,
+      timestamp: timestamp,
+      commenterUID: puid
+    });
+
+    res.json({message:"Comment added successfully."});  
+  } catch (error) {
+    console.error("Error adding comment:", error);
+    res.status(500).send("Internal server error.");
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Start the Express server
 server.listen(3002, () => {
   console.log(`Server is running on port ${3002}`);
 });
 
 
-// app.listen(port, () => {
-//   console.log(`Server is running on port ${port}`); ``
-// });
+
