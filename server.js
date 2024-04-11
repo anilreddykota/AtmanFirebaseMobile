@@ -415,7 +415,7 @@ app.post('/user/activity', async (req, res) => {
 
     activitySnapshot.forEach(doc => {
       activityLog.push({
-        id: doc.id,
+        id: doc.id, 
         timestamp: doc.data().timestamp.toDate(),
         activity: doc.data().activity
       });
@@ -2637,6 +2637,12 @@ app.post('/createcollege', async (req, res) => {
   try {
     const { collegename, email, password, collegecode } = req.body;
 
+    // Check if college with the same college code already exists
+    const collegeExists = await admin.firestore().collection('colleges').doc('collegedata').collection('list').where('email', '==', email).get();
+      if (!collegeExists.empty) {
+      return res.json({message:"College with the same email already exists."}); 
+    }
+
     // Hash the password before storing
     const hashedPassword = await bcrypt.hash(password, 15);
 
@@ -2653,12 +2659,13 @@ app.post('/createcollege', async (req, res) => {
       [collegecode]: collegename // Assuming collegecode is unique
     });
 
-    res.status(200).send("College created successfully.");
+    res.json({message: "College created successfully."});
   } catch (error) {
     console.error("Error creating college:", error);
     res.status(500).send("Internal Server Error");
   }
 });
+
 
 app.post('/collegelogin', async (req, res) => {
   try {
