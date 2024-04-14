@@ -266,6 +266,67 @@ app.post('/userdetails', async (req, res) => {
   }
 });
 
+
+app.post('/updateuserprofile', upload.single('image'), async (req, res) => {
+  try {
+    const { uid } = req.body;
+    const { buffer } = req.file;
+
+    // Upload the image to Firebase Storage
+  
+    const storageRef = admin.storage().bucket().file(`profilepics/${uid}`);
+    await storageRef.save(buffer, { contentType: 'image/jpeg' });
+
+    // Get the URL of the uploaded image
+    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/profilepics%2F${uid}?alt=media`;
+    // Get the current date
+
+
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
+      {
+        profile: imageUrl
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+    res.json({ message: 'User photo added successfully', uid: uid });
+
+  
+
+  
+  } catch (error) {
+    console.error('Error in photo update route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/removeprofileimage', async (req, res) => {
+  try {
+      const { uid } = req.body;
+
+      // Remove the profile image from Firebase Storage
+      const storageRef = admin.storage().bucket().file(`profilepics/${uid}`);
+      await storageRef.delete();
+
+      // Remove the profile image URL from Firestore
+      await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).update({
+          profile: admin.firestore.FieldValue.delete()
+      });
+
+      // Return success response
+      res.json({ message: 'Profile image removed successfully', uid: uid });
+  } catch (error) {
+      console.error('Error removing profile image:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+
+
+
+
+
+
 app.post('/registerUserNickname', async (req, res) => {
   try {
     const { uid, nickname } = req.body;
@@ -401,21 +462,24 @@ async function logUserActivity(uid, activity) {
 // Route to get user activity and last login
 app.post('/user/activity', async (req, res) => {
   try {
-    const { uid } = req.body;
+    const { uid, page = 1, pageSize = 5} = req.body;
 
     // Ensure that the uid is provided in the request body
     if (!uid) {
       return res.status(400).json({ message: 'User ID (uid) is required in the request body' });
     }
 
-    // Retrieve user activity log
+    // Calculate the starting index based on the page number and page size
+    const startIndex = (page - 1) * pageSize;
+
+    // Retrieve user activity log with pagination
     const activityLogRef = admin.firestore().collection('userActivity').doc(uid).collection('activityLog');
-    const activitySnapshot = await activityLogRef.orderBy('timestamp', 'desc').get();
+    const activitySnapshot = await activityLogRef.orderBy('timestamp', 'desc').limit(pageSize).offset(startIndex).get();
     const activityLog = [];
 
     activitySnapshot.forEach(doc => {
       activityLog.push({
-        id: doc.id, 
+        id: doc.id,
         timestamp: doc.data().timestamp.toDate(),
         activity: doc.data().activity
       });
@@ -435,6 +499,7 @@ app.post('/user/activity', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 
 const tokenBlacklist = [];
 //logout route
@@ -613,6 +678,13 @@ app.get('/get-next-question', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+
+
+
+
+
+
 app.post('/create-post', upload.single('image'), async (req, res) => {
   try {
     const { title, description, uid } = req.body;
