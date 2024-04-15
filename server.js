@@ -241,25 +241,18 @@ async function updateUserAndReRegister(uid, email, password) {
   }
 }
 
-
-
-
-
-
-
-
 app.post('/userdetails', async (req, res) => {
   try {
-    const { uid, name, gender, age, occupation, relationshipstatus, language } = req.body;
+    const { uid, name, gender, age, occupation, relationshipstatus, language ,year,dept } = req.body;
     // Update user data in Firestore (add or update the nickname)
     await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
-        name, gender, age, occupation, relationshipstatus, language
+        name, gender, age, occupation, relationshipstatus, language,year,dept
       },
       { merge: true } // This option ensures that existing data is not overwritten
     );
-
-    res.json({ message: 'User details saved successfully', uid: uid });
+       const userDetails = await admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).get();
+    res.json({ message: 'User details saved successfully', details: userDetails.data() });
   } catch (error) {
     console.error('Error in user details registration step:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -425,7 +418,7 @@ app.post('/UserLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-            userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname, token: token },
+            userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname, token: token,details:userDoc },
           });
         } else {
           res.json({ message: 'Invalid email or password' });
@@ -1387,6 +1380,128 @@ app.post('/registerPsychologistNickname', async (req, res) => {
   }
 });
 
+app.post('/doctordetails', async (req, res) => {
+  try {
+    const { uid, name, gender, age, language ,area_of_expertise,phonenumber } = req.body;
+    // Update user data in Firestore (add or update the nickname)
+    await admin.firestore().collection('psychologists').doc(uid).set(
+      {
+        name, gender, age, language ,area_of_expertise,phonenumber
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+       const userDetails = await admin.firestore().collection('psychologists').doc(uid).get();
+    res.json({ message: 'User details saved successfully', details: userDetails.data() });
+  } catch (error) {
+    console.error('Error in user details registration step:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
+app.post('/updatedoctorprofile', upload.single('image'), async (req, res) => {
+  try {
+    const { uid } = req.body;
+    const { buffer } = req.file;
+
+    // Upload the image to Firebase Storage
+  
+    const storageRef = admin.storage().bucket().file(`profilepics/${uid}`);
+    await storageRef.save(buffer, { contentType: 'image/jpeg' });
+
+    // Get the URL of the uploaded image
+    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/profilepics%2F${uid}?alt=media`;
+    // Get the current date
+
+
+    await admin.firestore().collection('psychologists').doc(uid).set(
+      {
+        profile: imageUrl
+      },
+      { merge: true } // This option ensures that existing data is not overwritten
+    );
+    res.json({ message: 'User photo added successfully', uid: uid });
+
+  
+
+  
+  } catch (error) {
+    console.error('Error in photo update route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/removedoctorprofileimage', async (req, res) => {
+  try {
+      const { uid } = req.body;
+
+      // Remove the profile image from Firebase Storage
+      const storageRef = admin.storage().bucket().file(`profilepics/${uid}`);
+      await storageRef.delete();
+
+      // Remove the profile image URL from Firestore
+      await admin.firestore().collection('psychologists').doc(uid).update({
+          profile: admin.firestore.FieldValue.delete()
+      });
+
+      // Return success response
+      res.json({ message: 'Profile image removed successfully', uid: uid });
+  } catch (error) {
+      console.error('Error removing profile image:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+app.post('/doctor/portfolioupdate', async (req, res) => {
+  try {
+    const data = req.body;
+    
+    // Reference to the portfolio document in Firestore
+    const portfolioRef = admin.firestore().collection('psychologists').doc(data.puid).collection('portfolio').doc('data');
+    
+    // Check if the portfolio document exists
+    const snapshot = await portfolioRef.get();
+    if (snapshot.exists) {
+      // Update the existing portfolio document
+      await portfolioRef.set(data);
+      res.json({ message: 'Portfolio updated successfully' });
+    } else {
+      // Create a new portfolio document
+      await portfolioRef.set(data);
+      res.json({ message: 'Portfolio created successfully' });
+    }
+  } catch (error) {
+    console.error('Error creating/updating portfolio:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+// Route to get portfolio data by puid
+app.get('/doctor/portfolio/:puid', async (req, res) => {
+  try {
+    const puid = req.params.puid;
+    
+    // Reference to the portfolio document in Firestore
+    const portfolioRef = admin.firestore().collection('psychologists').doc(puid);
+    
+    
+    // Get the portfolio document
+    const snapshot = await portfolioRef.collection('portfolio').doc('data').get();
+    if (snapshot.exists) {
+      const portfolioData = snapshot.data();
+      res.status(200).json({portfolioData,docotordata: (await portfolioRef.get()).data()});
+    } else {
+      res.status(404).json({ error: 'Portfolio not found' });
+    }
+  } catch (error) {
+    console.error('Error getting portfolio data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+
+
+
 app.post('/psychologistLogin', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -1417,7 +1532,7 @@ app.post('/psychologistLogin', async (req, res) => {
           await logUserActivity(psychologistRecord.uid, "logged in")
           res.json({
             message: 'Login successful',
-            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistDoc.data().nickname, token: token },
+            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistDoc.data().nickname, token: token,details:psychologistDoc },
           });
         } else {
           res.json({ message: 'Invalid email or password' });
