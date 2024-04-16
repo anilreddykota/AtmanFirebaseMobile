@@ -418,8 +418,10 @@ app.post('/UserLogin', async (req, res) => {
           res.header('Authorization', `Bearer ${token}`);
           res.json({
             message: 'Login successful',
-            userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname, token: token,details:userDoc },
+            userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname, token: token,details:userDoc.data() },
           });
+
+          console.log(userDoc.data);
         } else {
           res.json({ message: 'Invalid email or password' });
         }
@@ -1476,27 +1478,46 @@ app.post('/doctor/portfolioupdate', async (req, res) => {
   }
 });
 // Route to get portfolio data by puid
-app.get('/doctor/portfolio/:puid', async (req, res) => {
+app.get('/doctor/portfolio/:nick', async (req, res) => {
   try {
-    const puid = req.params.puid;
-    
-    // Reference to the portfolio document in Firestore
-    const portfolioRef = admin.firestore().collection('psychologists').doc(puid);
-    
-    
-    // Get the portfolio document
-    const snapshot = await portfolioRef.collection('portfolio').doc('data').get();
-    if (snapshot.exists) {
-      const portfolioData = snapshot.data();
-      res.status(200).json({portfolioData,docotordata: (await portfolioRef.get()).data()});
-    } else {
-      res.status(404).json({ error: 'Portfolio not found' });
+    const nick = req.params.nick;
+    console.log(nick);
+
+    // Query Firestore to find the document where 'nickname' matches the provided nickname
+    const portfolioRef = await admin.firestore().collection('psychologists').where('nickname', '==', nick).get();
+
+    // Check if any documents match the query
+    if (portfolioRef.empty) {
+      // No document found with the provided nickname
+      return res.json({ message: 'Doctor not found' });
     }
+
+    // Assuming only one document is expected to match the provided nickname
+    const doctorDoc = portfolioRef.docs[0];
+
+    // Reference to the 'portfolio' subcollection within the doctor's document
+    const portfolioCollectionRef = doctorDoc.ref.collection('portfolio');
+
+    // Get the 'data' document from the 'portfolio' subcollection
+    const dataDoc = await portfolioCollectionRef.doc('data').get();
+
+    // Check if the 'data' document exists
+    if (!dataDoc.exists) {
+      // No 'data' document found in the 'portfolio' subcollection
+      return res.json({ message: 'Portfolio data not found' });
+    }
+
+    // Get the portfolio data from the 'data' document
+    const portfolioData = dataDoc.data();
+    // Respond with the portfolio data
+    return res.json({ user: portfolioData,details:{email:doctorDoc.data().email, phone:doctorDoc.data().phonenumber,profile:doctorDoc.data().profile} });
   } catch (error) {
     console.error('Error getting portfolio data:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+
 
 
 
@@ -1527,12 +1548,13 @@ app.post('/psychologistLogin', async (req, res) => {
           // Set the token in the psychologist document
           await psychologistDocRef.update({ token: token });
 
-          // Include the token in the response header and respond with psychologist data
+
+          const details=  psychologistDoc.data()
           res.header('Authorization', `Bearer ${token}`);
           await logUserActivity(psychologistRecord.uid, "logged in")
           res.json({
             message: 'Login successful',
-            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistDoc.data().nickname, token: token,details:psychologistDoc },
+            userData: { email: psychologistRecord.email, uid: psychologistRecord.uid, nickname: psychologistDoc.data().nickname, token: token,details:details},
           });
         } else {
           res.json({ message: 'Invalid email or password' });
