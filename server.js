@@ -1481,8 +1481,6 @@ app.post('/doctor/portfolioupdate', async (req, res) => {
 app.get('/doctor/portfolio/:nick', async (req, res) => {
   try {
     const nick = req.params.nick;
-    console.log(nick);
-
     // Query Firestore to find the document where 'nickname' matches the provided nickname
     const portfolioRef = await admin.firestore().collection('psychologists').where('nickname', '==', nick).get();
 
@@ -1509,7 +1507,6 @@ app.get('/doctor/portfolio/:nick', async (req, res) => {
 
     // Get the portfolio data from the 'data' document
     const portfolioData = dataDoc.data();
-    // Respond with the portfolio data
     return res.json({ user: portfolioData,details:{email:doctorDoc.data().email, phone:doctorDoc.data().phonenumber,profile:doctorDoc.data().profile} });
   } catch (error) {
     console.error('Error getting portfolio data:', error);
@@ -1625,7 +1622,7 @@ app.post('/bookAppointment', async (req, res) => {
 
     if (existingAppointment) {
       // Appointment for the same time slot and puid already exists
-      return res.status(400).json({ message: 'Appointment for the same time slot and doctor already exists.' });
+      return res.json({ message: 'Appointment for the same time slot and doctor already exists.' });
     }
 
     // Add the new booking to the array
@@ -1681,11 +1678,10 @@ app.post('/updateAppointmentStatus', async (req, res) => {
 
     // Check if the required parameters are provided
     if (!uid || !puid || !status) {
-      return res.status(400).json({ message: 'Invalid request. Missing uid, puid, or status.' });
+      return res.json({ message: 'Invalid request. Missing uid, puid, or status.' });
     }
 
-    // Reference to the 'pending' subcollection for the specified 'puid'
-    const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
+      const pendingAppointmentsRef = admin.firestore().collection('psychologists').doc(puid).collection("pending").doc("pending");
 
     // Get the existing document data from the 'pending' collection
     const pendingAppointmentsData = (await pendingAppointmentsRef.get()).data();
@@ -1699,7 +1695,7 @@ app.post('/updateAppointmentStatus', async (req, res) => {
     const appointmentToUpdate = pendingAppointmentsData.bookings.find(appointment => appointment.uid === uid);
 
     if (!appointmentToUpdate) {
-      return res.status(404).json({ message: 'Appointment not found for the specified uid' });
+      return res.json({ message: 'Appointment not found for the specified uid' });
     }
 
     // Remove the appointment from the 'pending' collection
@@ -1781,6 +1777,57 @@ app.post('/getAppointmentsByDoctor', async (req, res) => {
 });
 
 
+app.post('/doctor/settime', async (req, res) => {
+  try {
+    const { puid, date, from, to } = req.body;
+    // Reference to the document for the specific date in the 'avalibletimes' subcollection
+    const docRef = admin.firestore().collection('psychologists').doc(puid).collection('avalibletimes').doc(date);
+
+    // Update the document with the provided 'from' and 'to' values
+    await docRef.set({ from, to });
+
+    // Respond with success message
+    res.status(200).json({ message: 'Available time set successfully' });
+  } catch (error) {
+    console.error('Error setting available time:', error);
+    // Respond with error message
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+app.get('/doctor/availabletimes/:puid', async (req, res) => {
+  try {
+    const puid = req.params.puid;
+
+    // Reference to the 'avalibletimes' subcollection for the specific doctor
+    const avalibletimesRef = admin.firestore().collection('psychologists').doc(puid).collection('avalibletimes');
+
+    // Get all available times from the subcollection
+    const snapshot = await avalibletimesRef.get();
+
+    // Extract the available times from the snapshot
+    const availableTimes = snapshot.docs.map(doc => ({
+      date: doc.id,
+      from: doc.data().from,
+      to: doc.data().to
+    }));
+
+    // Respond with the available times
+    res.status(200).json({ availableTimes });
+  } catch (error) {
+    console.error('Error getting available times:', error);
+    // Respond with error message
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+
+
+
+
+
 
 
 app.post('/addAppointmentToDoctorList', async (req, res) => {
@@ -1797,8 +1844,8 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
       .collection('users')
       .doc("userDetails")
       .collection("details")
-      .where('nickname', '==', nickname)
-      .limit(1)
+      .where('college', '==', nickname)
+      .limit(5)
       .get();
 
     if (userSnapshot.empty) {
