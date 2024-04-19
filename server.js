@@ -1663,6 +1663,46 @@ app.post('/store-reminder', async (req, res) => {
   }
 });
 
+app.post('/get-records', async (req, res) => {
+  try {
+    const { uid, date } = req.body;
+
+    console.log(uid, date);
+
+    // Create a reference to the reminders collection for the specific user and date
+    const remindersCollectionRef = admin.firestore().collection('psychologists').doc(uid).collection('remainders').doc(date);
+
+    // Check if the reminder already exists for the date
+    const snapshot = await remindersCollectionRef.get();
+
+    // If reminder data exists, send it in the response
+    if (snapshot.exists) {
+      const data = snapshot.data();
+    
+      
+      // Extract reminders array from data
+      const reminders = data.reminders || [];
+
+      // Format reminders array
+      const formattedReminders = reminders.map(reminder => ({
+        time: {
+          from: reminder.time.from,
+          to: reminder.time.to
+        },
+        plan: reminder.plan
+      }));
+
+      res.json({ tasks: formattedReminders });
+    } else {
+      // If no reminder data found for the date, send an empty array
+      res.json({ tasks: [] });
+    }
+  } catch (error) {
+    console.error('Error retrieving reminders:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 
 
 app.post('/updateAppointmentStatus', async (req, res) => {
