@@ -104,9 +104,9 @@ app.post('/registerUser', async (req, res) => {
 app.post('/registerUseronweb', async (req, res) => {
   try {
     const { email, password, age, nickname, college } = req.body;
-    console.log(age + "-< age \n" + "nickname " + nickname);
 
-    // Check if user exists
+    console.log(await isNicknameTaken(nickname))
+
     let existingUserRecord;
     try {
       existingUserRecord = await admin.auth().getUserByEmail(email);
@@ -116,28 +116,23 @@ app.post('/registerUseronweb', async (req, res) => {
         console.log(error.code);
       }
     }
-
     if (existingUserRecord) {
-      // User already exists
+    
       const userData = existingUserRecord.toJSON();
-      if (!userData || !userData.nickname) {
-        // User doesn't have a nickname, update details and re-register
-        try {
-          await updateUserAndReRegisterweb(existingUserRecord.uid, email, password, nickname, age, college);
-        } catch (error) {
-          return res.json({ message: error.message })
-        }
 
-        return res.json({ message: 'User details updated and re-registered successfully', uid: existingUserRecord.uid });
-      } else {
-        // User already registered with a nickname
-        return res.json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
-      }
+
+      console.log(userData);
+      return res.json({message: "this email is already registered"});
     } else {
-      // User doesn't exist, create a new user
+        const isnametaken = await isNicknameTaken(nickname);
+       if(isnametaken){
+         res.json({message: "nickname already exist"})
+
+       }
+      const hashedPassword =  await bcrypt.hash(password, 15);
       const userRecord = await admin.auth().createUser({
         email,
-        password: await bcrypt.hash(password, 15),
+        password:hashedPassword,
         age,
         nickname,
         college
@@ -146,13 +141,11 @@ app.post('/registerUseronweb', async (req, res) => {
       // Store user details in Firestore
       await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set({
         email,
-        password: userRecord.passwordHash,
+        password: hashedPassword,
         age,
         nickname,
         college
       });
-
-      // Respond with a success message and user UID
       return res.json({ message: 'Registration successful', uid: userRecord.uid });
     }
   } catch (error) {
