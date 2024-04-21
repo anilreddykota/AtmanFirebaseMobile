@@ -1667,7 +1667,7 @@ app.post('/get-records', async (req, res) => {
   try {
     const { uid, date } = req.body;
 
-    console.log(uid, date);
+  
 
     // Create a reference to the reminders collection for the specific user and date
     const remindersCollectionRef = admin.firestore().collection('psychologists').doc(uid).collection('remainders').doc(date);
@@ -1867,63 +1867,66 @@ app.post('/addAppointmentToDoctorList', async (req, res) => {
   try {
     const { puid, nickname } = req.body;
     console.log(puid, nickname);
+    
     // Check if both puid and nickname are provided
     if (!puid || !nickname) {
       return res.status(400).json({ message: 'Invalid request. Missing puid or nickname parameter in the request body.' });
     }
 
-    // Get the UID associated with the provided nickname
+    // Query Firestore to find users with the provided college nickname
     const userSnapshot = await admin.firestore()
-      .collection('users')
-      .doc("userDetails")
-      .collection("details")
+      .collection('users').doc('userDetails').collection('details')
       .where('college', '==', nickname)
-      .limit(5)
       .get();
 
+    // Check if any users are found
     if (userSnapshot.empty) {
-      return res.json({ message: 'User with the provided nickname not found.' });
+      return res.json({ message: 'No students found with the provided college nickname.' });
     }
 
-    // Assuming there's only one user with the provided nickname, get their UID
-    const userData = userSnapshot.docs[0];
-    const uid = userData.id;
+    // Get the UIDs of users from the snapshot
+    const uids = userSnapshot.docs.map(doc => doc.id);
 
-    // Reference the document in the 'doctorAppointments' collection corresponding to the provided puid
-    const doctorAppointmentRef = admin.firestore().collection('psychologists').doc(puid).collection("approved").doc("addedbyPsych");
+    // Reference the document in the 'psychologists' collection corresponding to the provided puid
+    const doctorAppointmentRef = admin.firestore()
+      .collection('psychologists')
+      .doc(puid)
+      .collection("approved")
+      .doc("addedbyPsych");
 
     // Get the existing data from the document
     const existingData = (await doctorAppointmentRef.get()).data();
 
-    // Check if the UID already exists in the array
-    if (existingData && existingData.uids && existingData.uids.includes(uid)) {
-      return res.json({ message: 'Appointment with the same client already exists.' });
-    }
+    // Check if the UIDs already exist in the array
+    if (existingData && existingData.uids) {
+      const existingUids = existingData.uids;
+      const newUids = uids.filter(uid => !existingUids.includes(uid));
 
-    // If the document already exists, update the array of UIDs
-    if (existingData) {
-      const updatedUids = [...(existingData.uids || []), uid];
+      // If all UIDs already exist, return a message
+      if (newUids.length === 0) {
+        return res.json({ message: 'students with the same clients already added' });
+      }
 
+      // If not all UIDs exist, update the array of UIDs
       await doctorAppointmentRef.update({
-        uids: updatedUids,
-
+        uids: [...existingUids, ...newUids]
       });
 
-      return res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
+      return res.json({ message: 'students added to the doctor list successfully', puid });
     }
 
     // If the document does not exist, create a new document with the array of UIDs
     await doctorAppointmentRef.set({
-      uids: [uid],
-
+      uids
     });
 
-    res.json({ message: 'Appointment added to the doctor list successfully', puid: puid });
+    res.json({ message: 'students added to the doctor list successfully', puid });
   } catch (error) {
-    console.error('Error adding appointment to the doctor list:', error);
+    console.error('Error adding appointments to the doctor list:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 
 
 
@@ -2676,6 +2679,35 @@ app.post('/admin/doctors', async (req, res) => {
   } catch (error) {
     console.error('Error fetching user details:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+
+app.post('/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+      // Check if the username exists in the Firestore collection of admins
+      const adminRef = admin.firestore().collection('admins').doc(username);
+      const adminDoc = await adminRef.get();
+
+      if (!adminDoc.exists) {
+          // Username doesn't exist
+          return res.status(401).json({ error: 'Invalid username or password' });
+      }
+
+      // Username exists, check if password matches
+      const adminData = adminDoc.data();
+      if (adminData.password !== password) {
+          // Password doesn't match
+          return res.status(401).json({ error: 'Invalid username or password' });
+      }
+
+      // Password matches, login successful
+      // You can set up a session, JWT, or send a token for further authentication
+      return res.status(200).json({ message: 'Login successful' });
+  } catch (error) {
+      console.error('Error logging in:', error);
+      return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
