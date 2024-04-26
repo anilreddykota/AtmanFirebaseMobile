@@ -2242,14 +2242,16 @@ app.get('/get-posts', async (req, res) => {
 
 app.get('/get-newsfeed', async (req, res) => {
   try {
-    const postsCollectionRef = admin.firestore().collection('approvedPosts');
+    const pageSize = 5; // Number of posts per page
+    const currentPage = parseInt(req.query.page) || 1; // Current page number, default is 1
+    const startIndex = (currentPage - 1) * pageSize;
 
-    const postsQuerySnapshot = await postsCollectionRef.get();
+    const postsCollectionRef = admin.firestore().collection('approvedPosts');
+    const postsQuerySnapshot = await postsCollectionRef.orderBy('date', 'desc').limit(pageSize).offset(startIndex).get();
 
     if (!postsQuerySnapshot.empty) {
       const postsData = [];
       const userDetailsPromises = []; // Array to hold promises for fetching user details
-      const commentsPromises = []; // Array to hold promises for fetching comments
 
       postsQuerySnapshot.forEach(doc => {
         const postData = doc.data();
@@ -2271,9 +2273,6 @@ app.get('/get-newsfeed', async (req, res) => {
           });
         userDetailsPromises.push(userDetailsPromise);
 
-        const commentsPromise = admin.firestore().collection('approvedPosts').doc(doc.id).collection('comments').get(); // Fetch comments for each post
-        commentsPromises.push(commentsPromise);
-
         postsData.push({
           ...postData,
           id: doc.id
@@ -2281,39 +2280,15 @@ app.get('/get-newsfeed', async (req, res) => {
       });
 
       const userDetailsSnapshots = await Promise.all(userDetailsPromises);
-      const commentsSnapshots = await Promise.all(commentsPromises);
 
-      const mergedPostsData = await Promise.all(postsData.map(async (postData, index) => {
-        const userDetails = userDetailsSnapshots[index];
-        const comments = await Promise.all(commentsSnapshots[index].docs.map(async commentDoc => {
-          const commentData = commentDoc.data();
-          let commenterDetails = null;
-
-          const psychologistSnapshot = await admin.firestore().collection('psychologists').doc(commentData.commenterUID).get();
-          const userSnapshot = await admin.firestore().collection('users').doc(commentData.commenterUID).get();
-
-          if (psychologistSnapshot.exists) {
-            commenterDetails = psychologistSnapshot.data();
-          } else if (userSnapshot.exists) {
-            commenterDetails = userSnapshot.data();
-          }
-
-          return {
-            id: commentDoc.id,
-            ...commentData,
-            commenterDetails: commenterDetails
-          };
-        }));
-
+      const mergedPostsData = postsData.map((postData, index) => {
         return {
           ...postData,
-          userDetails: userDetails,
-          comments: comments
+          userDetails: userDetailsSnapshots[index]
         };
-      }));
+      });
 
-      const sortedPosts = mergedPostsData.sort((a, b) => b.date.toDate() - a.date.toDate());
-      res.json({ posts: sortedPosts });
+      res.json({ posts: mergedPostsData });
     } else {
       res.status(404).json({ message: 'No posts found' });
     }
@@ -2322,6 +2297,8 @@ app.get('/get-newsfeed', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+
 
 
 
@@ -2636,6 +2613,39 @@ app.post('/admin/deletePost', async (req, res) => {
         await logUserActivity(pendingPostData.uid, 'your post has been deleted by admin');
 
         res.status(200).json({ success: true, postId, message: 'Pending post deleted as it was not approved' });
+      } else {
+        res.status(400).json({ success: false, message: 'Pending post is already approved' });
+      }
+    } else {
+      res.status(404).json({ success: false, message: 'Pending post not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+app.post('/deletePost', async (req, res) => {
+  try {
+    const { postId } = req.body;
+
+    // Get the reference to the Firestore collection
+    const pendingPostsCollectionRef = admin.firestore().collection('approvedPosts');
+
+    // Retrieve the pending post
+    const pendingPostDoc = await pendingPostsCollectionRef.doc(postId).get();
+
+    // Check if the pending post exists
+    if (pendingPostDoc.exists) {
+      const pendingPostData = pendingPostDoc.data();
+
+      // Check if the post is not approved
+      if (!pendingPostData.approved) {
+        // Delete the pending post
+        await pendingPostDoc.ref.delete();
+
+        await logUserActivity(pendingPostData.uid, 'your post has been deleted by admin or psychologist as it voilated community guidelines');
+
+        res.status(200).json({ success: true, postId, message: 'post deleted as it was not approved' });
       } else {
         res.status(400).json({ success: false, message: 'Pending post is already approved' });
       }
@@ -3068,6 +3078,68 @@ app.post('/doctor/addcomment', async (req, res) => {
 });
 
 
+
+
+app.post('/library/upload', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).send('No file uploaded.');
+    }
+
+    // Generate a unique filename using UUID
+    const imageFilename = `library/books/${uuidv4()}_${file.originalname}`;
+    // Upload the image to Firebase Storage
+    const storageRef = admin.storage().bucket().file(imageFilename);
+    await storageRef.save(file.buffer);
+
+    const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket.name}/o/${encodeURIComponent(storageRef.name)}?alt=media`;
+
+    // Add book information to Firestore
+    const currentDate = new Date(); // Get current date and time
+
+    await admin.firestore().collection('library').add({
+        title: req.body.title, // Assuming title is sent in the request body
+        author: req.body.author, // Assuming author is sent in the request body
+        imageUrl: fileUrl,
+        dateCreated: currentDate // Add current date as metadata
+    });
+    
+
+    return res.status(200).send('File uploaded and book information added to Firestore.');
+  } catch (error) {
+    console.error('Error uploading file and adding book information:', error);
+    return res.status(500).send('Internal Server Error.');
+  }
+});
+
+app.get('/library/books', async (req, res) => {
+  try {
+    // Fetch books from Firestore
+    const snapshot = await admin.firestore().collection('library').get();
+
+    // Extract book data from Firestore snapshot
+    const books = [];
+    snapshot.forEach(doc => {
+      const bookData = doc.data();
+      const book = {
+        id: doc.id,
+        title: bookData.title,
+        author: bookData.author,
+        imageUrl: bookData.imageUrl,
+        dateCreated: bookData.dateCreated.toDate() // Convert Firestore timestamp to JavaScript Date object
+      };
+      books.push(book);
+    });
+
+    // Send books data as response
+    return res.status(200).json(books);
+  } catch (error) {
+    console.error('Error fetching books:', error);
+    return res.status(500).send('Internal Server Error.');
+  }
+});
 
 
 
