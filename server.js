@@ -528,7 +528,8 @@ app.post('/logout-user', async (req, res) => {
 
 app.post('/generateOtp', async (req, res) => {
   try {
-    const { uid, email } = req.body;
+    const { email } = req.body;
+    const userRecord = await admin.auth().getUserByEmail(email);
 
     // Generate a random OTP
     const otpLength = 4;
@@ -537,9 +538,11 @@ app.post('/generateOtp', async (req, res) => {
       otp += Math.floor(Math.random() * 10).toString();
     }
 
-    // Save the OTP in Firestore under the user's UID
-    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).update({
+    // Save the OTP and its generation time in Firestore under the user's UID
+    const otpGenerationTime = new Date().getTime(); // Current timestamp
+    await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).update({
       otp,
+      otpGenerationTime, // Saving OTP generation time
     });
 
     // Send OTP to the user's email
@@ -571,37 +574,52 @@ app.post('/generateOtp', async (req, res) => {
 });
 
 
-// POST method for verify-otp endpoint
-app.post('/verify-otp', async (req, res) => {
-  try {
-    const { uid, enteredOtp } = req.body;
 
-    // Retrieve stored OTP from Firestore using the provided UID
-    const otpDocRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid);
+// POST method for verify-otp endpoint
+app.post('/verify-otp-change-password', async (req, res) => {
+  try {
+    const { email, enteredOtp, newpassword } = req.body;
+    const userRecord = await admin.auth().getUserByEmail(email);
+    // Retrieve stored OTP and its generation time from Firestore using the provided UID
+    const otpDocRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(userRecord.uid);
     const otpDoc = await otpDocRef.get();
 
     if (otpDoc.exists) {
       const storedOtp = otpDoc.data().otp;
+      const otpGenerationTime = otpDoc.data().otpGenerationTime;
 
       // Compare entered OTP with stored OTP
       if (enteredOtp === storedOtp) {
-        // OTP verification successful
-        // Delete the OTP from Firestore
-        await otpDocRef.update({ otp: admin.firestore.FieldValue.delete() });
-        res.status(200).json({ message: 'OTP verification successful' });
+        // Check if OTP is within the 10-minute window
+        const currentTime = new Date().getTime();
+        const timeDifference = currentTime - otpGenerationTime;
+        const timeLimit = 10 * 60 * 1000; // 10 minutes in milliseconds
+
+        if (timeDifference <= timeLimit) {
+          // OTP verification successful within the time limit
+          // Delete the OTP from Firestore
+          const hashedPassword =  await bcrypt.hash(newpassword, 15);
+          await otpDocRef.update({ password: hashedPassword }); // Update password
+          await otpDocRef.update({ otp: admin.firestore.FieldValue.delete() }); // Remove OTP
+          res.json({ message: 'OTP verification successful' });
+        } else {
+          // OTP expired
+          res.json({ message: 'OTP expired' });
+        }
       } else {
         // Incorrect OTP
-        res.status(400).json({ message: 'Incorrect OTP' });
+        res.json({ message: 'Incorrect OTP' });
       }
     } else {
       // OTP not found in Firestore
-      res.status(404).json({ message: 'OTP not found' });
+      res.json({ message: 'OTP not found' });
     }
   } catch (error) {
     console.error('Error in POST verify OTP route:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
 async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
   return snapshot.size + 1; // Incrementing the count for the next question
@@ -2805,72 +2823,57 @@ io.on('connection', (socket) => {
   });
 
 
-  socket.on('newAnswer', (offerObj, ackFunction) => {
-    console.log(offerObj);
-    //emit this answer (offerObj) back to CLIENT1
-    //in order to do that, we need CLIENT1's socketid
-    const socketToAnswer = connectedSockets.find(s => s.userName === offerObj.offererUserName)
-    if (!socketToAnswer) {
-      console.log("No matching socket")
-      return;
+  socket.on('initiateCall', (data) => {
+    const receiverSocket =soketconnections[data.receiver];
+    if (receiverSocket) {
+        receiverSocket.emit('incomingCall', { sender: data.sender });
     }
-    //we found the matching socket, so we can emit to it!
-    const socketIdToAnswer = socketToAnswer.socketId;
-    //we find the offer to update so we can emit it
-    const offerToUpdate = offers.find(o => o.offererUserName === offerObj.offererUserName)
-    if (!offerToUpdate) {
-      console.log("No OfferToUpdate")
-      return;
+});
+
+// Handle call acceptance
+socket.on('acceptCall', (data) => {
+    const senderSocket = soketconnections[data.sender];
+    if (senderSocket) {
+        senderSocket.emit('callAccepted', { receiver: data.receiver });
     }
-    //send back to the answerer all the iceCandidates we have already collected
-    ackFunction(offerToUpdate.offerIceCandidates);
-    offerToUpdate.answer = offerObj.answer
-    offerToUpdate.answererUserName = userName
-    //socket has a .to() which allows emiting to a "room"
-    //every socket has it's own room
-    socket.to(socketIdToAnswer).emit('answerResponse', offerToUpdate)
-  })
+});
 
-  socket.on('sendIceCandidateToSignalingServer', iceCandidateObj => {
-    const { didIOffer, iceUserName, iceCandidate } = iceCandidateObj;
-    // console.log(iceCandidate);
-    if (didIOffer) {
-      //this ice is coming from the offerer. Send to the answerer
-      const offerInOffers = offers.find(o => o.offererUserName === iceUserName);
-      if (offerInOffers) {
-        offerInOffers.offerIceCandidates.push(iceCandidate)
-        // 1. When the answerer answers, all existing ice candidates are sent
-        // 2. Any candidates that come in after the offer has been answered, will be passed through
-        if (offerInOffers.answererUserName) {
-          //pass it through to the other socket
-          const socketToSendTo = connectedSockets.find(s => s.userName === offerInOffers.answererUserName);
-          if (socketToSendTo) {
-            socket.to(socketToSendTo.socketId).emit('receivedIceCandidateFromServer', iceCandidate)
-          } else {
-            console.log("Ice candidate recieved but could not find answere")
-          }
-        }
-      }
-    } else {
-      //this ice is coming from the answerer. Send to the offerer
-      //pass it through to the other socket
-      const offerInOffers = offers.find(o => o.answererUserName === iceUserName);
-      const socketToSendTo = connectedSockets.find(s => s.userName === offerInOffers.offererUserName);
-      if (socketToSendTo) {
-        socket.to(socketToSendTo.socketId).emit('receivedIceCandidateFromServer', iceCandidate)
-      } else {
-        console.log("Ice candidate recieved but could not find offerer")
-      }
+// Handle call rejection
+socket.on('rejectCall', (data) => {
+    const senderSocket = soketconnections[data.sender];
+    if (senderSocket) {
+        senderSocket.emit('callRejected', { receiver: data.receiver });
     }
-    // console.log(offers)
-  })
+});
 
+// Handle ICE candidates
+socket.on('iceCandidate', (candidate) => {
+    const receiverSocket = soketconnections[candidate.receiver];
+    if (receiverSocket) {
+        receiverSocket.emit('iceCandidate', candidate);
+    }
+});
 
+// Handle offer from caller
+socket.on('offer', (offer) => {
+    const receiverSocket = soketconnections[offer.receiver];
+    console.log('Receiver', offer);
 
+    if (receiverSocket) {
+        receiverSocket.emit('offer', offer);
+    }
+});
 
-
+// Handle answer from callee
+socket.on('answer', (answer) => {
+    const senderSocket = soketconnections[answer.sender];
+    if (senderSocket) {
+        senderSocket.emit('answer', answer);
+    }
+});
   socket.on('disconnect', () => {
     console.log('User disconnected');
+  
 
   });
 });
