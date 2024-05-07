@@ -105,7 +105,6 @@ app.post('/registerUseronweb', async (req, res) => {
   try {
     const { email, password, age, nickname, college } = req.body;
 
-    console.log(await isNicknameTaken(nickname))
 
     let existingUserRecord;
     try {
@@ -121,7 +120,6 @@ app.post('/registerUseronweb', async (req, res) => {
       const userData = existingUserRecord.toJSON();
 
 
-      console.log(userData);
       return res.json({message: "this email is already registered"});
     } else {
         const isnametaken = await isNicknameTaken(nickname);
@@ -414,7 +412,6 @@ app.post('/UserLogin', async (req, res) => {
             userData: { email: userRecord.email, uid: userRecord.uid, nickname: userNickname, token: token,details:userDoc.data() },
           });
 
-          console.log(userDoc.data);
         } else {
           res.json({ message: 'Invalid email or password' });
         }
@@ -495,7 +492,6 @@ app.post('/logout-user', async (req, res) => {
   try {
     // Extract uid from the request body
     const { uid } = req.body;
-    console.log(uid);
 
     // Get reference to the user document in Firestore
     const userDocRef = admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid);
@@ -736,7 +732,6 @@ app.post('/like-post', async (req, res) => {
   const uid = req.query.uid;
   try {
 
-    console.log(postId, uid);
     await admin.firestore().runTransaction(async transaction => {
       const postRef = admin.firestore().collection('approvedPosts').doc(postId);
       const doc = await transaction.get(postRef);
@@ -917,7 +912,6 @@ app.post('/submit-daily-mood', async (req, res) => {
     // Get the current date
     const currentDate = new Date();
     const formattedDate = formatDateForDocumentId(currentDate);
-    console.log(formattedDate)
     const answerRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('mood').doc(formattedDate);
 
 
@@ -1038,7 +1032,6 @@ app.post('/submit-daily-journal-answer', async (req, res) => {
     // Get the current date
     const currentDate = new Date();
     const formattedDate = formatDateForDocumentId(currentDate);
-    console.log(formattedDate)
     const answerRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('dailyjournalanswers').doc(formattedDate);
 
 
@@ -1534,7 +1527,6 @@ app.get('/doctor/portfolio/:nick', async (req, res) => {
 app.post('/psychologistLogin', async (req, res) => {
   try {
     const { email, password } = req.body;
-
     // Retrieve psychologist by email using the admin SDK
     const psychologistRecord = await admin.auth().getUserByEmail(email);
     if (psychologistRecord) {
@@ -1594,7 +1586,6 @@ app.post('/psychologistLogout', async (req, res) => {
   try {
     // Extract token from the Authorization header
     const { puid } = req.body;
-    console.log(puid);
     const userDocRef = admin.firestore().collection('psychologists').doc(puid);
 
     // Get the user document data
@@ -1884,7 +1875,6 @@ app.get('/doctor/availabletimes/:puid', async (req, res) => {
 app.post('/addAppointmentToDoctorList', async (req, res) => {
   try {
     const { puid, nickname } = req.body;
-    console.log(puid, nickname);
     
     // Check if both puid and nickname are provided
     if (!puid || !nickname) {
@@ -2026,6 +2016,45 @@ app.post('/createChatConversation', async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.post('/get-students-by-college', async (req, res) => {
+  try {
+    const { code } = req.body;
+    
+    // Check if code is provided
+    if (!code) {
+      return res.status(400).json({ message: 'Invalid request. Missing code parameter in the request body.' });
+    }
+
+    // Query Firestore to find users with the provided college code
+    const userSnapshot = await admin.firestore()
+      .collection('users').doc('userDetails').collection('details')
+      .where('college', '==', code)
+      .get();
+
+    // Check if any users are found
+    if (userSnapshot.empty) {
+      return res.json({ message: 'No students found with the provided college code.' });
+    }
+
+    // Get the UIDs of users from the snapshot
+    const students = userSnapshot.docs.map(doc => {
+      return {
+        uid: doc.id,
+        details: {
+          name: doc.data().name, // Assuming 'name' is a field in the document
+          fulldetails: doc.data() // Include the whole document if needed
+        }
+      };
+    });
+
+    res.json({ message: 'Students list', students });
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 
 // Send message route
 app.post('/sendMessage', async (req, res) => {
@@ -2324,7 +2353,7 @@ app.get('/get-newsfeed', async (req, res) => {
 app.post('/get-analysis-of-student', async (req, res) => {
   try {
     const { uid } = req.body;
-    console.log(uid);
+   
     // Assuming your Firestore structure is /users/userDetails/details/{userId}/mood/{date}
     const moodRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).collection('mood');
     const snapshot = await moodRef.get();
@@ -2764,8 +2793,8 @@ function generateConversationId(userId1, userId2) {
 const soketconnections = {}
 io.on('connection', (socket) => {
   console.log('A user connected');
-
   socket.on('join', (data) => {
+  
     soketconnections[data.sender] = socket.id;
     // You can also save the join event to Firestore if needed
     io.emit('joined', { soketconnections })
@@ -2823,26 +2852,24 @@ io.on('connection', (socket) => {
   });
 
 
-  socket.on('initiateCall', (data) => {
-    const receiverSocket =soketconnections[data.receiver];
-    if (receiverSocket) {
-        receiverSocket.emit('incomingCall', { sender: data.sender });
-    }
-});
 
 // Handle call acceptance
-socket.on('acceptCall', (data) => {
-    const senderSocket = soketconnections[data.sender];
+socket.on('answer', (data) => {
+  
+    const senderSocket = soketconnections[data.receiver];
     if (senderSocket) {
-        senderSocket.emit('callAccepted', { receiver: data.receiver });
+        io.to(senderSocket).emit('answer',  data.connection);
     }
+    else [
+      io.emit("alert",{message:"before you accept call user went ofline"})
+    ]
 });
 
-// Handle call rejection
-socket.on('rejectCall', (data) => {
-    const senderSocket = soketconnections[data.sender];
+
+socket.on('decline', (data) => {
+    const senderSocket = soketconnections[data.receiver];
     if (senderSocket) {
-        senderSocket.emit('callRejected', { receiver: data.receiver });
+       io.to(senderSocket).emit('decline', { receiver: data.receiver });
     }
 });
 
@@ -2857,20 +2884,16 @@ socket.on('iceCandidate', (candidate) => {
 // Handle offer from caller
 socket.on('offer', (offer) => {
     const receiverSocket = soketconnections[offer.receiver];
-    console.log('Receiver', offer);
-
     if (receiverSocket) {
-        receiverSocket.emit('offer', offer);
+     
+        io.to(receiverSocket).emit('offer', offer);
+    }
+    else{
+      io.emit('alert', {message: "user offline not available"});
     }
 });
 
-// Handle answer from callee
-socket.on('answer', (answer) => {
-    const senderSocket = soketconnections[answer.sender];
-    if (senderSocket) {
-        senderSocket.emit('answer', answer);
-    }
-});
+
   socket.on('disconnect', () => {
     console.log('User disconnected');
   
@@ -2886,7 +2909,6 @@ app.post("/api/sendmessages", async (req, res) => {
     for (const uid of uids) {
       // Create the conversation ID by combining PUID and UID
       const conversationId = generateConversationId(uid, puid);
-      console.log(conversationId);
 
       // Get the reference to the Firestore document using the conversationId
       const conversationRef = admin.firestore().collection('chat').doc(conversationId);
