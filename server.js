@@ -47,7 +47,11 @@ async function authenticateUser(req, res, next) {
     console.error('Error verifying token:', error);
     res.status(401).json({ message: 'Unauthorized - Invalid token' });
   }
+}catch (error) {
+  console.log(error);
 }
+}
+
 
 async function isNicknameTaken(nickname) {
   const snapshot = await admin.firestore().collection('users').doc("userDetails").collection("details").where('nickname', '==', nickname).get();
