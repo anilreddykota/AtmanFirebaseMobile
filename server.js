@@ -13,7 +13,6 @@ const port = 3001;
 const cors = require('cors'); 
 app.use(cors());
 
-// Initialize Firebase Admin SDK
 
 const serviceAccount = require('./newkey.json');
 const { Timestamp } = require('@google-cloud/firestore');
@@ -24,17 +23,14 @@ admin.initializeApp({
 });
 
 
-// Middleware for parsing JSON
 app.use(express.json());
 
-//authenticateuser
 async function authenticateUser(req, res, next) {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'Unauthorized - Missing token' });
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     
-    // Add the user UID to the request object for further processing
     req.userUid = decodedToken.uid;
 
     next();
@@ -54,42 +50,34 @@ app.post('/registerUser', async (req, res) => {
   try {
       const { email, password } = req.body;
 
-      // Check if user exists
       let existingUserRecord;
       try {
           existingUserRecord = await admin.auth().getUserByEmail(email);
       } catch (error) {
-          // If no user record found, proceed with registration
           if (error.code !== 'auth/user-not-found') {
-              throw error; // Rethrow other errors
+              throw error; 
           }
       }
 
       if (existingUserRecord) {
-          // User already exists
           const userData = existingUserRecord.toJSON();
           if (!userData || !userData.nickname) {
-              // User doesn't have a nickname, update details and re-register
               await updateUserAndReRegister(existingUserRecord.uid, email, password);
               return res.json({ message: 'registration`', uid: existingUserRecord.uid });
           } else {
-              // User already registered with a nickname
               return res.status(400).json({ message: 'you are already registered  try with other email', error: 'User already registered with a nickname' });
           }
       } else {
-          // User doesn't exist, create a new user
           const userRecord = await admin.auth().createUser({
               email,
               password: await bcrypt.hash(password, 15)
           });
 
-          // Store user details in Firestore
           await admin.firestore().collection('users').doc("userDetails").collection("details").doc(userRecord.uid).set({
               email,
               password: userRecord.passwordHash
           });
 
-          // Respond with a success message and user UID
           return res.json({ message: 'Registration successful', uid: userRecord.uid });
       }
   } catch (error) {
@@ -100,39 +88,31 @@ app.post('/registerUser', async (req, res) => {
 
 async function updateUserAndReRegister(uid, email, password) {
   try {
-      // Check if user already has a nickname
       const userDoc = await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).get();
       if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData && userData.nickname) {
-              // User already registered with a nickname, throw error
               throw new Error('User already registered with a nickname');
           }
       }
 
-      // Delete existing user document
       await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).delete();
 
-      // Re-register the user with the same UID
       const hashedPassword = await bcrypt.hash(password, 15);
       await admin.auth().updateUser(uid, {
           password: hashedPassword
       });
 
-      // Update user details in Firestore
       await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set({
           email,
           password: hashedPassword
       });
 
-      // Return success message
       return { message: 'User details updated and re-registered successfully', uid };
   } catch (error) {
-      // Handle specific error case: User already registered with a nickname
       if (error.message === 'User already registered with a nickname') {
           throw error;
       }
-      // Handle other errors
       throw new Error('Error updating user details and re-registering');
   }
 }
@@ -147,12 +127,11 @@ async function updateUserAndReRegister(uid, email, password) {
 app.post('/userdetails', async (req, res) => {
   try {
     const { uid, name, gender, age, occupation, relationshipstatus, language } = req.body;
-    // Update user data in Firestore (add or update the nickname)
     await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
         name, gender, age, occupation, relationshipstatus, language
       },
-      { merge: true } // This option ensures that existing data is not overwritten
+      { merge: true } 
     );
 
     res.json({ message: 'User details saved successfully', uid:uid });
@@ -165,18 +144,16 @@ app.post('/userdetails', async (req, res) => {
 app.post('/registerUserNickname', async (req, res) => {
   try {
     const { uid, nickname } = req.body;
-    // Check if the nickname is already taken
     const nicknameExists = await isNicknameTaken(nickname);
     if (nicknameExists) {
       return res.status(400).json({ message: 'Nickname is already taken' });
     }
-    // Update user data in Firestore (add or update the nickname)
     await admin.firestore().collection('users').doc("userDetails").collection("details").doc(uid).set(
       {
         nickname,
         profile:'https://firebasestorage.googleapis.com/v0/b/psycove-4ebf5.appspot.com/o/defaultpic.jpeg?alt=media'
       },
-      { merge: true } // This option ensures that existing data is not overwritten
+      { merge: true } 
     );
     res.json({ message: 'User nickname added registered successfully', uid: uid });
   } catch (error) {
