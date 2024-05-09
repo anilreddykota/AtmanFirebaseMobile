@@ -528,11 +528,26 @@ app.post('/generateOtp', async (req, res) => {
 
     const mailOptions = {
       from: 'psycove.innerself@gmail.com',
-      to: email,
+      to: email, // Assuming 'email' variable holds the recipient's email address
       subject: 'Password Reset OTP',
-      text: `Your OTP for password reset is: ${otp}`,
+      html: `<div style="background-color: #007bff; padding: 20px; color: white;">
+        <p>Dear Student,</p>
+        
+        <p>We have received a request to reset the password for your account. To proceed with the password reset process, please use the following One-Time Password (OTP):</p>
+        
+        <p><strong>OTP:</strong><b> ${otp}</b></p>
+        
+        <p>Please note that this OTP is valid for a single use only and will expire in 10 minutes. If you did not request this password reset, please disregard this email or contact our support team immediately.</p>
+        
+        <p>Thank you for using our services.</p>
+        
+        <p>Best regards,<br/>
+        Anil Reddy<br/>
+        Product Developer</p>
+      </div>`
     };
-
+    
+    
     await transporter.sendMail(mailOptions);
 
     res.json({ message: 'OTP sent successfully' });
@@ -570,6 +585,7 @@ app.post('/verify-otp-change-password', async (req, res) => {
           const hashedPassword =  await bcrypt.hash(newpassword, 15);
           await otpDocRef.update({ password: hashedPassword }); // Update password
           await otpDocRef.update({ otp: admin.firestore.FieldValue.delete() }); // Remove OTP
+          sendmailaspasswordchanged(email)
           res.json({ message: 'OTP verification successful' });
         } else {
           // OTP expired
@@ -588,6 +604,40 @@ app.post('/verify-otp-change-password', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+
+
+async function sendmailaspasswordchanged(email){
+  
+    // Send OTP to the user's email
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'psycove.innerself@gmail.com',
+        pass: 'kjrqzsjvbapkoqbw',
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    const mailOptions = {
+      from: 'psycove.innerself@gmail.com',
+      to: email,
+      subject: 'Password Changed',
+      html: `<div style="background-color: #007bff; padding: 20px; color: white;">
+          <p>Dear Student,</p>
+          <p>This is to inform you that the password for your account has been successfully changed.</p>
+          <p>If you did not initiate this change, please contact our support team immediately.</p>
+          <p>Thank you for using our services.</p>
+          <p>Best regards,<br/>
+          Anil Reddy<br/>
+          Product Developer</p>
+      </div>`
+  };
+    
+    
+    await transporter.sendMail(mailOptions);
+}
 
 async function getCurrentQuestionCount() {
   const snapshot = await admin.firestore().collection('questions').get();
