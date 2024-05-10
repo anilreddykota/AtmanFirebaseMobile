@@ -2591,6 +2591,52 @@ app.post('/create-daily-picture', upload.single('image'), async (req, res) => {
   }
 });
 
+app.post("/admin/assigncollegetodoctor", async (req, res) => {
+  try {
+      const { uid, college } = req.body;
+
+      // Reference to the document of the doctor in the 'psychologists' collection
+      const userDetailsCollectionRef = admin.firestore().collection('psychologists').doc(uid);
+
+      // Update college field in the document
+      await userDetailsCollectionRef.update({
+          college: college
+      });
+
+      res.status(200).json({message:"College assigned successfully"});
+  } catch (error) {
+      console.error("Error assigning college to doctor:", error);
+      res.status(500).send("Internal server error");
+  }
+});
+
+app.get("/admin/doctorforcollege/:college", async (req, res) => {
+  try {
+      const collegeCode = req.params.college;
+
+      // Query the 'psychologists' collection to retrieve documents with the specified college code
+      const doctorsSnapshot = await admin.firestore().collection('psychologists').where('college', '==', collegeCode).get();
+
+      // Array to hold the details of all doctors with the specified college
+      const doctorsDetails = [];
+
+      doctorsSnapshot.forEach((doctorDoc) => {
+          const doctorData = doctorDoc.data();
+          // Add doctor details to the array
+          doctorsDetails.push({
+              id: doctorDoc.id,
+              ...doctorData
+          });
+      });
+
+      // Send response with the details of all doctors with the specified college
+      res.status(200).json(doctorsDetails);
+  } catch (error) {
+      console.error("Error fetching doctors details:", error);
+      res.status(500).send("Internal server error");
+  }
+});
+
 
 app.post('/admin/postsStatus', async (req, res) => {
   try {
@@ -3062,16 +3108,20 @@ app.post('/collegelogin', async (req, res) => {
     }
 
     const collegeData = collegeSnapshot.docs[0].data();
+  
 
     // Compare the provided password with the hashed password stored in the database
     const passwordMatch = await bcrypt.compare(password, collegeData.password);
-
+   
     if (!passwordMatch) {
-      return res.json({ message: "Invalid password." });
+       res.json({ message: "Invalid password." });
+    }else{
+      res.json({ message: "Login failed", collegeData });
     }
-
+  
     // If the credentials are correct, you can return some college data or a success message
-    res.json({ message: "Login successful", collegeData });
+
+  
 
   } catch (error) {
     console.error("Error logging in:", error);
