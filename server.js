@@ -2369,6 +2369,52 @@ app.get('/get-newsfeed', async (req, res) => {
 });
 
 
+app.get('/filterPostByUid', async (req, res) => {
+  try {
+    const pageSize = 10; // Number of posts per page
+    const currentPage = parseInt(req.query.page) || 1; // Current page number, default is 1
+    const uid = req.query.uid; // UID to filter posts
+    const startIndex = (currentPage - 1) * pageSize;
+
+    if (!uid) {
+      return res.status(400).json({ message: 'UID is required' });
+    }
+
+    const postsCollectionRef = admin.firestore().collection('approvedPosts');
+    const postsQuerySnapshot = await postsCollectionRef
+      .where('uid', '==', uid)
+      .orderBy('date', 'desc')
+      .offset(startIndex)
+      .limit(pageSize)
+      .get();
+
+    if (postsQuerySnapshot.empty) {
+      return res.status(404).json({ message: 'No posts found' });
+    }
+
+    const postsData = postsQuerySnapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    }));
+
+    const userSnapshot = await admin.firestore().collection('users').doc('userDetails').collection('details').doc(uid).get();
+    let userDetails = null;
+
+    if (userSnapshot.exists) {
+      userDetails = userSnapshot.data();
+    } else {
+      const psychologistSnapshot = await admin.firestore().collection('psychologists').doc(uid).get();
+      if (psychologistSnapshot.exists) {
+        userDetails = psychologistSnapshot.data();
+      }
+    }
+
+    res.json({ posts: postsData, userDetails });
+  } catch (error) {
+    console.error('Error in flterpostsbyuid route:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
 
 
 
