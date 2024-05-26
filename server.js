@@ -1166,6 +1166,76 @@ app.post('/questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+app.post('/postQuestions', async (req, res) => {
+  try {
+    const { questions } = req.body;
+
+    // Create a reference to the 'users' collection
+    const usersCollectionRef = admin.firestore().collection('users');
+
+    // Create a reference to the 'selftest' subcollection under 'users'
+    const selfTestCollectionRef = usersCollectionRef.doc('selftest').collection('questions');
+
+    for (const questionData of questions) {
+      const { question, category, options } = questionData;
+      
+      // Get the current index for the set
+      const setDoc = await selfTestCollectionRef.doc(category).get();
+      let currentIndex = 1; // Default to 1 if set doesn't exist
+
+      if (setDoc.exists) {
+        const setData = setDoc.data();
+        const questionIds = Object.keys(setData);
+        currentIndex = questionIds.length + 1;
+      }
+
+      // Add the question directly to the specified set with the current index
+      await selfTestCollectionRef.doc(category).set({
+        [currentIndex]: {
+          text: question,
+          options: options.map(opt => opt.option),
+          scores: options.map(opt => Number(opt.score)), // Ensure scores are numbers
+
+        },
+      }, { merge: true });
+    }
+
+    res.json({ message: 'Questions added successfully' });
+  } catch (error) {
+    console.error('Error adding questions:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/saveSelfTestResults', async (req, res) => {
+  try {
+    const { results, uid } = req.body;
+    const dateNow = new Date().toISOString(); // Current date-time string
+
+    if (!uid) {
+      return res.status(400).json({ error: 'UID is required' });
+    }
+
+   
+
+    // Create a reference to the specified document path
+    const userDetailsDocRef = admin.firestore().collection("users").doc("userDetails").collection("details").doc(uid).collection("selftest").doc(dateNow);
+
+    // Save the results with a timestamp
+    await userDetailsDocRef.set({
+      results,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({ message: 'Results saved successfully' });
+  } catch (error) {
+    console.error('Error saving results:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
 
 
 app.post('/change-password', async (req, res) => {
