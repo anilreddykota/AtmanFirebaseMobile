@@ -8,6 +8,7 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const upload = multer();
+const cron = require('node-cron');
 
 const port = 3001;
 const cors = require('cors');
@@ -737,7 +738,7 @@ app.post('/create-post', upload.single('image'), async (req, res) => {
       likesCount: 0
     };
 
-    // Reference to the "pending" subcollection under the "posts" document in the "users" collection
+   
     const pendingPostsCollectionRef = admin.firestore().collection('users').doc('posts').collection('pending');
 
     // Add the new post document to the "pending" subcollection
@@ -1103,19 +1104,23 @@ app.get('/daily-journal-date', async (req, res) => {
 
 app.get('/random-questions', async (req, res) => {
   try {
+    const { college } = req.query;
+
     // Create a reference to the 'users' collection
     const usersCollectionRef = admin.firestore().collection('users');
+    var setsSnapshot = await usersCollectionRef.doc('selftest').collection('questions').get();
 
-    // Get all sets
-    const setsSnapshot = await usersCollectionRef.doc('selftest').collection('questions').get();
+if(college){
+  var setsSnapshot = await usersCollectionRef.doc('selftest').collection(college).get();
+
+}
 
     let allQuestions = [];
 
     // Iterate through each set
     setsSnapshot.forEach(setDoc => {
       const setData = setDoc.data();
-      Object.entries(setData).forEach(([key, value]) => {
-        // Extract set, text, options, scores, and index for each question
+      Object.entries(setData?.questions).forEach(([key, value]) => {
         const { text, options, scores } = value;
         const question = { set: setDoc.id, text, options, scores, index: parseInt(key) };
         allQuestions.push(question);
@@ -1131,6 +1136,67 @@ app.get('/random-questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
+app.post('/postQuestions', async (req, res) => {
+  try {
+    const { questions, college } = req.body;
+
+    // Determine the Firestore collection path based on the presence of the college
+    let collectionPath = 'users/selftest/questions';
+    if (college) {
+      collectionPath = `users/selftest/${college}`;
+    }
+
+    // Create a reference to the specific collection based on the determined path
+    const selfTestCollectionRef = admin.firestore().collection(collectionPath);
+
+    for (const questionData of questions) {
+      const { category, question, options } = questionData;
+
+      // Reference to the category document if college is provided
+      const categoryDocRef = college ? selfTestCollectionRef.doc(category) : selfTestCollectionRef.doc(category);
+
+      // Get the current category document data if college is provided
+      let questionsArray = [];
+      if (college) {
+        const categoryDoc = await categoryDocRef.get();
+        if (categoryDoc.exists) {
+          const categoryData = categoryDoc.data();
+          questionsArray = categoryData.questions || [];
+        }
+      } else {
+        // Get the current questions array if college is not provided
+        const selfTestDoc = await categoryDocRef.get();
+        if (selfTestDoc.exists) {
+          const selfTestData = selfTestDoc.data();
+          questionsArray = selfTestData.questions || [];
+        }
+      }
+
+      // Add the new question to the questions array
+      questionsArray.push({
+        text: question,
+        options: options.map(opt => opt.option),
+        scores: options.map(opt => Number(opt.score)) // Ensure scores are numbers
+      });
+
+      // Update the category document or the selftest document with the new questions array
+      await categoryDocRef.set({
+        questions: questionsArray
+      }, { merge: true });
+    }
+
+    res.json({ message: 'Questions added successfully' });
+  } catch (error) {
+    console.error('Error adding questions:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
+
+
+
 app.post('/questions', async (req, res) => {
   try {
     const { set, text, options, scores } = req.body;
@@ -1166,46 +1232,9 @@ app.post('/questions', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-app.post('/postQuestions', async (req, res) => {
-  try {
-    const { questions } = req.body;
 
-    // Create a reference to the 'users' collection
-    const usersCollectionRef = admin.firestore().collection('users');
 
-    // Create a reference to the 'selftest' subcollection under 'users'
-    const selfTestCollectionRef = usersCollectionRef.doc('selftest').collection('questions');
 
-    for (const questionData of questions) {
-      const { question, category, options } = questionData;
-      
-      // Get the current index for the set
-      const setDoc = await selfTestCollectionRef.doc(category).get();
-      let currentIndex = 1; // Default to 1 if set doesn't exist
-
-      if (setDoc.exists) {
-        const setData = setDoc.data();
-        const questionIds = Object.keys(setData);
-        currentIndex = questionIds.length + 1;
-      }
-
-      // Add the question directly to the specified set with the current index
-      await selfTestCollectionRef.doc(category).set({
-        [currentIndex]: {
-          text: question,
-          options: options.map(opt => opt.option),
-          scores: options.map(opt => Number(opt.score)), // Ensure scores are numbers
-
-        },
-      }, { merge: true });
-    }
-
-    res.json({ message: 'Questions added successfully' });
-  } catch (error) {
-    console.error('Error adding questions:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
 
 app.post('/saveSelfTestResults', async (req, res) => {
   try {
@@ -1804,6 +1833,47 @@ app.post('/get-records', async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
+app.post('/get-records-admin', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    console.log(uid);
+
+    // Reference to the 'remainders' subcollection
+    const remaindersCollectionRef = admin.firestore().collection('psychologists').doc(uid).collection('remainders');
+
+    // Get all documents in the 'remainders' subcollection
+    const remaindersSnapshot = await remaindersCollectionRef.get();
+    const allReminders = [];
+
+    // Iterate over each document in the 'remainders' collection
+    remaindersSnapshot.forEach(doc => {
+      if (doc.exists) {
+        const data = doc.data();
+        const reminders = data.reminders || [];
+
+        const formattedReminders = reminders.map(reminder => ({
+          date: doc.id, // Add date to each reminder
+          time: {
+            from: reminder.time.from,
+            to: reminder.time.to
+          },
+          plan: reminder.plan
+        }));
+
+        allReminders.push(...formattedReminders);
+      }
+    });
+    console.log(allReminders);
+
+    // Send all reminders in the response
+    res.json({ tasks: allReminders });
+  } catch (error) {
+    console.error('Error retrieving reminders:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
+
 
 
 
@@ -2802,13 +2872,21 @@ app.post('/admin/approvepost', async (req, res) => {
       const pendingPostData = pendingPostDoc.data();
 
       // Add the pending post to the approved collection
-      await approvedPostsCollectionRef.doc(postId).set({
+      await approvedPostsCollectionRef.doc(postId).set({  
         postId,
         ...pendingPostData,
       });
+
+     const userPostsRef = admin.firestore().collection('users').doc('userDetails').collection('details').doc(pendingPostData.uid).collection('posts');
+
+     userPostsRef.doc(postId).set(
+    {postId}
+     )
+
+
       await logUserActivity(pendingPostData.uid, 'your post has been approved by admin');
 
-      // Delete the pending post
+     
       await pendingPostDoc.ref.delete();
 
       res.status(200).json({ success: true, postId, message: 'Post approved and moved to the approved collection' });
@@ -2856,6 +2934,31 @@ app.post('/admin/deletePost', async (req, res) => {
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
+
+app.get('/post/:postid',async(req,res)=>{
+try{
+
+  const { postid } = req.params;
+
+  // Get the reference to the Firestore collection
+  const postRef = admin.firestore().collection('approvedPosts');
+  const PostDoc = await postRef.doc(postid).get();
+
+
+res.json({data:PostDoc.data()})
+  
+
+}catch(error){
+  console.log(error);
+}
+
+
+})
+
+
+
+
+
 app.post('/deletePost', async (req, res) => {
   try {
     const { postId } = req.body;
@@ -3358,14 +3461,92 @@ app.get('/library/books', async (req, res) => {
 
 
 
+// mail handling ----------------------------------------------------
 
 
 
 
+async function sendMailToAdminAboutPostApproval(email, subject, approvalLink) {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: 'psycove.innerself@gmail.com',
+      pass: 'kjrqzsjvbapkoqbw',
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  const mailOptions = {
+    from: 'psycove.innerself@gmail.com',
+    to: email,
+    subject: subject,
+    html: `<div style="background-color: #007bff; padding: 20px; color: white;">
+      <p>Dear Admin,</p>
+      
+      <p>There are new posts submitted for approval. Please review the pending posts by following the link below:</p>
+      
+      <p><a href="${approvalLink}" style="color: #ffffff; text-decoration: underline;">Click here to review the posts</a></p>
+      
+      <p>Thank you for your prompt attention to this matter.</p>
+      
+      <p>Best regards,<br/>
+      Anil Reddy<br/>
+      Product Developer</p>
+    </div>`
+  };
+
+  await transporter.sendMail(mailOptions);
+}
 
 
 
 
+cron.schedule('0 */6 * * *', () => {
+  console.log('Running task to check pending list and send notifications');
+  checkPendingListAndNotify();
+});
+
+
+async function checkPendingListAndNotify() {
+  // Fetch pending posts
+  const pendingPosts = await getPendingPosts();
+
+  if (pendingPosts.length === 0) {
+    console.log('No pending posts found.');
+    return;
+  }
+
+
+  const approvalLink = 'https://psyshell.co/aTman-Admin-Panel/template/index.html#posts_wrapper'
+
+  
+  const adminEmails = await getAdminEmails();
+
+  adminEmails.forEach(email => {
+    sendMailToAdminAboutPostApproval(email, 'New Post Approval Required', approvalLink)
+      .then(() => console.log('Email sent successfully to:', email))
+      .catch((error) => console.error('Error sending email to:', email, error));
+  });
+}
+
+async function getPendingPosts() {
+  const db = admin.firestore();
+  const snapshot = await db.collection("users").doc("posts").collection('pending').get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getAdminEmails() {
+  const db = admin.firestore();
+  const doc = await db.collection('admins').doc('adminMails').get();
+  if (!doc.exists) {
+    console.log('No admin email document found!');
+    return [];
+  }
+  const data = doc.data();
+  return data.mails || [];
+}
 
 
 
